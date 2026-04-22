@@ -26,8 +26,38 @@ export default function AdminHome() {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<Account>>({});
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifBody, setNotifBody] = useState("");
+  const [notifTarget, setNotifTarget] = useState<string>(""); // "" = all
+  const [sending, setSending] = useState(false);
   const toast = useToast();
   const router = useRouter();
+
+  async function sendNotification() {
+    if (!notifTitle.trim() || !notifBody.trim()) return;
+    setSending(true);
+    try {
+      const r = await fetch("/api/admin/notifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: notifTitle,
+          body: notifBody,
+          accountId: notifTarget || undefined,
+        }),
+      });
+      if (r.ok) {
+        toast.show(notifTarget ? "Notification sent" : "Notification broadcast");
+        setNotifTitle("");
+        setNotifBody("");
+        setNotifTarget("");
+      } else {
+        toast.show("Send failed");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/admin/session")
@@ -134,6 +164,47 @@ export default function AdminHome() {
         <h1 className="text-3xl font-semibold tracking-tight">Admin · Accounts</h1>
         <button className="btn btn-ghost" onClick={logout}>Sign out</button>
       </div>
+
+      <div className="card p-5 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Send notification</h2>
+          <select
+            className="input !py-1.5 !px-3 text-sm !w-auto"
+            value={notifTarget}
+            onChange={(e) => setNotifTarget(e.target.value)}
+          >
+            <option value="">All users (broadcast)</option>
+            {accounts?.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
+        <input
+          className="input"
+          value={notifTitle}
+          onChange={(e) => setNotifTitle(e.target.value)}
+          placeholder="Title"
+          maxLength={120}
+        />
+        <textarea
+          className="input"
+          rows={3}
+          value={notifBody}
+          onChange={(e) => setNotifBody(e.target.value)}
+          placeholder="Message body"
+          maxLength={1000}
+        />
+        <div className="flex justify-end">
+          <button
+            className="btn btn-primary"
+            disabled={!notifTitle.trim() || !notifBody.trim() || sending}
+            onClick={sendNotification}
+          >
+            {sending && <span className="spinner" />} Send
+          </button>
+        </div>
+      </div>
+
       <div className="card overflow-hidden">
         <div className="grid grid-cols-[2.2fr_1fr_1.5fr_auto] gap-4 px-5 py-3 border-b border-[var(--border)] text-xs label items-center">
           <span>Account name</span>

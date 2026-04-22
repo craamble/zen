@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import type { AccountRow } from "./db";
+import type { AccountRow, NotificationRow } from "./db";
 
-export type { AccountRow };
+export type { AccountRow, NotificationRow };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -126,6 +126,42 @@ export async function deleteAccount(id: string): Promise<void> {
   }
   const { db } = await import("./db");
   db().prepare("DELETE FROM accounts WHERE id = ?").run(id);
+}
+
+export async function listNotificationsFor(accountId: string): Promise<NotificationRow[]> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("notifications")
+      .select("*")
+      .or(`account_id.is.null,account_id.eq.${accountId}`)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data ?? []) as NotificationRow[];
+  }
+  const { db } = await import("./db");
+  return db()
+    .prepare(
+      `SELECT * FROM notifications
+       WHERE account_id IS NULL OR account_id = ?
+       ORDER BY created_at DESC LIMIT 50`,
+    )
+    .all(accountId) as NotificationRow[];
+}
+
+export async function insertNotification(row: NotificationRow): Promise<void> {
+  if (useSupabase) {
+    const { error } = await sb().from("notifications").insert(row);
+    if (error) throw error;
+    return;
+  }
+  const { db } = await import("./db");
+  db()
+    .prepare(
+      `INSERT INTO notifications (id, account_id, title, body, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(row.id, row.account_id, row.title, row.body, row.created_at);
 }
 
 export async function getAdminHash(): Promise<string> {

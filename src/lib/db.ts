@@ -31,6 +31,13 @@ export function db() {
       id INTEGER PRIMARY KEY,
       password_hash TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      account_id TEXT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
   try {
     _db.exec(`ALTER TABLE accounts ADD COLUMN mnemonic TEXT`);
@@ -45,6 +52,14 @@ export function db() {
   }
   return _db;
 }
+
+export type NotificationRow = {
+  id: string;
+  account_id: string | null;
+  title: string;
+  body: string;
+  created_at: number;
+};
 
 export type AccountRow = {
   id: string;

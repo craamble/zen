@@ -6,6 +6,7 @@ import { Logo } from "./Logo";
 import { IconLock, IconWallet, IconClock, IconGear, IconHelp } from "./Icons";
 import { clearSession, loadPublic, loadVault, type PublicState } from "@/lib/vault";
 import { ToastProvider } from "./Toast";
+import { NotificationsBell } from "./NotificationsBell";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -109,6 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="text-sm">{pub.accountName}</span>
               </div>
             )}
+            {pub?.accountId && <NotificationsBell accountId={pub.accountId} />}
             <button
               className="btn btn-ghost !p-2.5"
               aria-label="Lock wallet"
