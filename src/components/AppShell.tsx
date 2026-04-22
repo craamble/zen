@@ -95,7 +95,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="flex items-center justify-end gap-3 px-8 py-4 border-b border-[var(--border)] bg-[var(--bg-1)]/20 backdrop-blur-md">
+          <header className="relative z-40 flex items-center justify-end gap-3 px-8 py-4 border-b border-[var(--border)] bg-[var(--bg-1)]/20 backdrop-blur-md">
+            {pub?.accountId && <NotificationsBell accountId={pub.accountId} />}
             {pub && (
               <div className="flex items-center gap-2.5 pl-1 pr-3 py-1 rounded-full bg-[var(--bg-2)]/50 border border-[var(--border)]">
                 <span
@@ -110,7 +111,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="text-sm">{pub.accountName}</span>
               </div>
             )}
-            {pub?.accountId && <NotificationsBell accountId={pub.accountId} />}
             <button
               className="btn btn-ghost !p-2.5"
               aria-label="Lock wallet"

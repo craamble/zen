@@ -62,20 +62,25 @@ export function NotificationsBell({ accountId }: { accountId: string }) {
   return (
     <div ref={rootRef} className="relative">
       <button
-        className="btn btn-ghost !p-2.5 relative"
+        className="btn btn-ghost !px-3 !py-2 relative flex items-center gap-2"
         aria-label="Notifications"
         title="Notifications"
         onClick={toggle}
       >
-        <IconBell />
-        {unread > 0 && (
-          <span
-            className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
-            style={{ background: "var(--danger)", color: "white" }}
-          >
-            {unread > 9 ? "9+" : unread}
-          </span>
-        )}
+        <span className="relative inline-flex">
+          <IconBell />
+          {unread > 0 && (
+            <span
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
+              style={{ background: "var(--danger)", color: "white" }}
+            >
+              {unread > 9 ? "9+" : unread}
+            </span>
+          )}
+        </span>
+        <span className="text-sm">
+          {unread} new notification{unread === 1 ? "" : "s"}
+        </span>
       </button>
       {open && (
         <div
