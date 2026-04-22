@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local sqlite (contains test mnemonics — do not commit)
+/data
+
+# claude code session state
+.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
