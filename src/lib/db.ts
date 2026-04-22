@@ -38,6 +38,15 @@ export function db() {
       body TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS custom_tokens (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      symbol TEXT,
+      balance TEXT NOT NULL,
+      logo TEXT,
+      created_at INTEGER NOT NULL
+    );
   `);
   try {
     _db.exec(`ALTER TABLE accounts ADD COLUMN mnemonic TEXT`);
@@ -58,6 +67,16 @@ export type NotificationRow = {
   account_id: string | null;
   title: string;
   body: string;
+  created_at: number;
+};
+
+export type CustomTokenRow = {
+  id: string;
+  account_id: string;
+  name: string;
+  symbol: string | null;
+  balance: string;
+  logo: string | null;
   created_at: number;
 };
 

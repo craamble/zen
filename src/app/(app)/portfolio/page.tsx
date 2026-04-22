@@ -10,6 +10,14 @@ import type { PriceMap } from "@/lib/prices";
 
 const SYMBOLS: ChainSymbol[] = ["DOT", "ETH", "BTC", "SOL", "USDT", "USDC"];
 
+type CustomToken = {
+  id: string;
+  name: string;
+  symbol: string | null;
+  balance: string;
+  logo: string | null;
+};
+
 export default function Portfolio() {
   const [pub, setPub] = useState<PublicState | null>(null);
   const [prices, setPrices] = useState<PriceMap | null>(null);
@@ -18,6 +26,7 @@ export default function Portfolio() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [textFields, setTextFields] = useState<{ text1: string; text2: string; text3: string; text4: string } | null>(null);
+  const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
 
   useEffect(() => {
     const p = loadPublic();
@@ -27,6 +36,10 @@ export default function Portfolio() {
       fetch(`/api/accounts/${p.accountId}`)
         .then((r) => r.json())
         .then((d) => setTextFields({ text1: d.text1, text2: d.text2, text3: d.text3, text4: d.text4 }))
+        .catch(() => {});
+      fetch(`/api/tokens?accountId=${encodeURIComponent(p.accountId)}`)
+        .then((r) => r.json())
+        .then((d) => setCustomTokens(d.tokens ?? []))
         .catch(() => {});
     }
     if (p) {
@@ -135,6 +148,32 @@ export default function Portfolio() {
               <div className="text-right tabular-nums">
                 <div>{r.bal.toFixed(r.sym === "BTC" ? 8 : 4)} {r.sym}</div>
                 <div className="muted text-xs">${r.value.toFixed(2)}</div>
+              </div>
+            </div>
+          ))}
+          {customTokens.map((t) => (
+            <div
+              key={t.id}
+              className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                {t.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={t.logo} alt="" className="w-9 h-9 rounded-full object-cover" />
+                ) : (
+                  <span className="w-9 h-9 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold">
+                    {(t.symbol || t.name)[0]?.toUpperCase()}
+                  </span>
+                )}
+                <div>
+                  <div className="font-medium">{t.name}</div>
+                  <div className="muted text-xs">{t.symbol ?? "—"}</div>
+                </div>
+              </div>
+              <div className="muted">—</div>
+              <div className="muted">—</div>
+              <div className="text-right tabular-nums">
+                <div>{t.balance} {t.symbol ?? ""}</div>
               </div>
             </div>
           ))}

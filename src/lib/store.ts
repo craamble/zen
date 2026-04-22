@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import type { AccountRow, NotificationRow } from "./db";
+import type { AccountRow, NotificationRow, CustomTokenRow } from "./db";
 
-export type { AccountRow, NotificationRow };
+export type { AccountRow, NotificationRow, CustomTokenRow };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -162,6 +162,47 @@ export async function insertNotification(row: NotificationRow): Promise<void> {
        VALUES (?, ?, ?, ?, ?)`,
     )
     .run(row.id, row.account_id, row.title, row.body, row.created_at);
+}
+
+export async function listCustomTokensFor(accountId: string): Promise<CustomTokenRow[]> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_tokens")
+      .select("*")
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as CustomTokenRow[];
+  }
+  const { db } = await import("./db");
+  return db()
+    .prepare("SELECT * FROM custom_tokens WHERE account_id = ? ORDER BY created_at ASC")
+    .all(accountId) as CustomTokenRow[];
+}
+
+export async function insertCustomToken(row: CustomTokenRow): Promise<void> {
+  if (useSupabase) {
+    const { error } = await sb().from("custom_tokens").insert(row);
+    if (error) throw error;
+    return;
+  }
+  const { db } = await import("./db");
+  db()
+    .prepare(
+      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.created_at);
+}
+
+export async function deleteCustomToken(id: string): Promise<void> {
+  if (useSupabase) {
+    const { error } = await sb().from("custom_tokens").delete().eq("id", id);
+    if (error) throw error;
+    return;
+  }
+  const { db } = await import("./db");
+  db().prepare("DELETE FROM custom_tokens WHERE id = ?").run(id);
 }
 
 export async function getAdminHash(): Promise<string> {

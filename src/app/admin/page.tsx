@@ -1,7 +1,164 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
+
+type CustomToken = {
+  id: string;
+  account_id: string;
+  name: string;
+  symbol: string | null;
+  balance: string;
+  logo: string | null;
+  created_at: number;
+};
+
+function TokensEditor({ accountId }: { accountId: string }) {
+  const [open, setOpen] = useState(false);
+  const [tokens, setTokens] = useState<CustomToken[] | null>(null);
+  const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [balance, setBalance] = useState("");
+  const [logo, setLogo] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  async function load() {
+    const r = await fetch(`/api/admin/tokens?accountId=${encodeURIComponent(accountId)}`);
+    if (r.ok) setTokens((await r.json()).tokens);
+  }
+
+  useEffect(() => {
+    if (open && tokens === null) load();
+  }, [open]);
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 300_000) {
+      toast.show("Logo too large (max 300KB)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogo(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(f);
+  }
+
+  async function addToken() {
+    if (!name.trim() || !balance.trim()) return;
+    if (!/^-?\d+(\.\d+)?$/.test(balance.trim())) {
+      toast.show("Balance must be a number");
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch("/api/admin/tokens", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ accountId, name: name.trim(), symbol: symbol.trim(), balance: balance.trim(), logo }),
+      });
+      if (r.ok) {
+        toast.show("Token added");
+        setName(""); setSymbol(""); setBalance(""); setLogo(null);
+        if (fileRef.current) fileRef.current.value = "";
+        await load();
+      } else {
+        toast.show("Add failed");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeToken(id: string) {
+    if (!confirm("Remove this token?")) return;
+    const r = await fetch(`/api/admin/tokens/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      toast.show("Removed");
+      await load();
+    }
+  }
+
+  return (
+    <details className="mt-2" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="muted text-xs cursor-pointer">custom tokens{tokens ? ` (${tokens.length})` : ""}</summary>
+      <div className="mt-2 flex flex-col gap-2 p-2 rounded-md border border-[var(--border)] bg-[var(--bg-2)]/40">
+        {tokens === null && open && <div className="flex justify-center p-2"><span className="spinner" /></div>}
+        {tokens && tokens.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            {tokens.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 text-xs">
+                {t.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={t.logo} alt="" className="w-5 h-5 rounded-full object-cover" />
+                ) : (
+                  <span className="w-5 h-5 rounded-full bg-[var(--bg-2)] border border-[var(--border)]" />
+                )}
+                <span className="font-medium">{t.name}</span>
+                {t.symbol && <span className="muted">{t.symbol}</span>}
+                <span className="ml-auto tabular-nums">{t.balance}</span>
+                <button
+                  className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
+                  style={{ color: "var(--danger)" }}
+                  onClick={() => removeToken(t.id)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[var(--border)]">
+          <input
+            className="input text-xs !py-1"
+            placeholder="Name (e.g. Dogecoin)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="input text-xs !py-1"
+            placeholder="Symbol (e.g. DOGE)"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+          />
+          <input
+            className="input text-xs !py-1"
+            placeholder="Balance (e.g. 12.5)"
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="text-xs"
+            onChange={onFile}
+          />
+          {logo && (
+            <div className="col-span-2 flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={logo} alt="" className="w-6 h-6 rounded-full object-cover" />
+              <button
+                className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
+                onClick={() => { setLogo(null); if (fileRef.current) fileRef.current.value = ""; }}
+              >
+                clear logo
+              </button>
+            </div>
+          )}
+          <button
+            className="btn btn-primary !py-1 text-xs col-span-2"
+            disabled={!name.trim() || !balance.trim() || saving}
+            onClick={addToken}
+          >
+            {saving && <span className="spinner" />} Add token
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
 
 type Account = {
   id: string;
@@ -245,6 +402,7 @@ export default function AdminHome() {
                   </div>
                 </details>
               )}
+              <TokensEditor accountId={a.id} />
             </div>
             <div className="muted text-sm text-center">{new Date(a.created_at).toLocaleString()}</div>
             <div>
