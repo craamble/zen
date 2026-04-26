@@ -19,9 +19,20 @@ export async function POST(req: NextRequest) {
   const symbol = typeof body.symbol === "string" && body.symbol.trim() ? body.symbol.trim().toUpperCase().slice(0, 10) : null;
   const balance = typeof body.balance === "string" ? body.balance.trim() : "";
   const logo = typeof body.logo === "string" && body.logo.trim() ? body.logo.trim() : null;
+  const priceRaw = typeof body.price === "string" ? body.price.trim() : "";
   if (!accountId || !name || !balance) return NextResponse.json({ error: "invalid" }, { status: 400 });
   if (!/^-?\d+(\.\d+)?$/.test(balance)) return NextResponse.json({ error: "bad_balance" }, { status: 400 });
   if (logo && logo.length > 500_000) return NextResponse.json({ error: "logo_too_large" }, { status: 400 });
+  let price: string | null = null;
+  if (priceRaw) {
+    if (/^-?\d+(\.\d+)?$/.test(priceRaw)) {
+      price = priceRaw;
+    } else if (/^[a-z0-9-]{1,40}$/i.test(priceRaw)) {
+      price = priceRaw.toLowerCase();
+    } else {
+      return NextResponse.json({ error: "bad_price" }, { status: 400 });
+    }
+  }
   const id = crypto.randomUUID();
   await insertCustomToken({
     id,
@@ -30,6 +41,7 @@ export async function POST(req: NextRequest) {
     symbol,
     balance,
     logo,
+    price,
     created_at: Date.now(),
   });
   return NextResponse.json({ id });

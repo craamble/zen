@@ -189,10 +189,10 @@ export async function insertCustomToken(row: CustomTokenRow): Promise<void> {
   const { db } = await import("./db");
   db()
     .prepare(
-      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, price, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.created_at);
+    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.price, row.created_at);
 }
 
 export async function deleteCustomToken(id: string): Promise<void> {

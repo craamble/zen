@@ -10,6 +10,7 @@ type CustomToken = {
   symbol: string | null;
   balance: string;
   logo: string | null;
+  price: string | null;
   created_at: number;
 };
 
@@ -19,6 +20,7 @@ function TokensEditor({ accountId }: { accountId: string }) {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [balance, setBalance] = useState("");
+  const [price, setPrice] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,15 +58,23 @@ function TokensEditor({ accountId }: { accountId: string }) {
       const r = await fetch("/api/admin/tokens", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ accountId, name: name.trim(), symbol: symbol.trim(), balance: balance.trim(), logo }),
+        body: JSON.stringify({
+          accountId,
+          name: name.trim(),
+          symbol: symbol.trim(),
+          balance: balance.trim(),
+          price: price.trim(),
+          logo,
+        }),
       });
       if (r.ok) {
         toast.show("Token added");
-        setName(""); setSymbol(""); setBalance(""); setLogo(null);
+        setName(""); setSymbol(""); setBalance(""); setPrice(""); setLogo(null);
         if (fileRef.current) fileRef.current.value = "";
         await load();
       } else {
-        toast.show("Add failed");
+        const e = await r.json().catch(() => ({}));
+        toast.show(e?.error === "bad_price" ? "Invalid price" : "Add failed");
       }
     } finally {
       setSaving(false);
@@ -97,6 +107,11 @@ function TokensEditor({ accountId }: { accountId: string }) {
                 )}
                 <span className="font-medium">{t.name}</span>
                 {t.symbol && <span className="muted">{t.symbol}</span>}
+                {t.price && (
+                  <span className="muted text-[10px]">
+                    @ {/^-?\d+(\.\d+)?$/.test(t.price) ? `$${t.price}` : t.price}
+                  </span>
+                )}
                 <span className="ml-auto tabular-nums">{t.balance}</span>
                 <button
                   className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
@@ -129,10 +144,16 @@ function TokensEditor({ accountId }: { accountId: string }) {
             onChange={(e) => setBalance(e.target.value)}
           />
           <input
+            className="input text-xs !py-1"
+            placeholder="Price: USD or CoinGecko id (ethereum, tether)"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+          />
+          <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            className="text-xs"
+            className="text-xs col-span-2"
             onChange={onFile}
           />
           {logo && (

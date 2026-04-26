@@ -16,7 +16,10 @@ type CustomToken = {
   symbol: string | null;
   balance: string;
   logo: string | null;
+  price: string | null;
 };
+
+type ExtraPrice = { usd: number; change24h: number };
 
 export default function Portfolio() {
   const [pub, setPub] = useState<PublicState | null>(null);
@@ -27,6 +30,7 @@ export default function Portfolio() {
   const [sendOpen, setSendOpen] = useState(false);
   const [textFields, setTextFields] = useState<{ text1: string; text2: string; text3: string; text4: string } | null>(null);
   const [customTokens, setCustomTokens] = useState<CustomToken[]>([]);
+  const [extraPrices, setExtraPrices] = useState<Record<string, ExtraPrice>>({});
 
   useEffect(() => {
     const p = loadPublic();
@@ -39,7 +43,23 @@ export default function Portfolio() {
         .catch(() => {});
       fetch(`/api/tokens?accountId=${encodeURIComponent(p.accountId)}`)
         .then((r) => r.json())
-        .then((d) => setCustomTokens(d.tokens ?? []))
+        .then((d) => {
+          const tokens: CustomToken[] = d.tokens ?? [];
+          setCustomTokens(tokens);
+          const ids = Array.from(
+            new Set(
+              tokens
+                .map((t) => t.price)
+                .filter((v): v is string => !!v && !/^-?\d+(\.\d+)?$/.test(v)),
+            ),
+          );
+          if (ids.length) {
+            fetch(`/api/prices/lookup?ids=${encodeURIComponent(ids.join(","))}`)
+              .then((r) => r.json())
+              .then((dd) => setExtraPrices(dd.prices ?? {}))
+              .catch(() => {});
+          }
+        })
         .catch(() => {});
     }
     if (p) {
@@ -61,8 +81,23 @@ export default function Portfolio() {
     const change = prices?.[s]?.change24h ?? 0;
     return { sym: s, price, bal, value, change };
   });
-  const totalValue = rows.reduce((a, r) => a + r.value, 0);
+
+  function resolveCustom(t: CustomToken): { price: number; change: number } {
+    if (!t.price) return { price: 0, change: 0 };
+    if (/^-?\d+(\.\d+)?$/.test(t.price)) return { price: parseFloat(t.price), change: 0 };
+    const p = extraPrices[t.price];
+    return { price: p?.usd ?? 0, change: p?.change24h ?? 0 };
+  }
+  const customRows = customTokens.map((t) => {
+    const bal = parseFloat(t.balance) || 0;
+    const { price, change } = resolveCustom(t);
+    return { token: t, bal, price, change, value: price * bal };
+  });
+
+  const totalValue =
+    rows.reduce((a, r) => a + r.value, 0) + customRows.reduce((a, r) => a + r.value, 0);
   rows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
+  customRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
 
   return (
     <div className="flex flex-col gap-4 max-w-6xl mx-auto w-full">
@@ -151,32 +186,54 @@ export default function Portfolio() {
               </div>
             </div>
           ))}
-          {customTokens.map((t) => (
-            <div
-              key={t.id}
-              className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                {t.logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={t.logo} alt="" className="w-9 h-9 rounded-full object-cover" />
-                ) : (
-                  <span className="w-9 h-9 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold">
-                    {(t.symbol || t.name)[0]?.toUpperCase()}
-                  </span>
-                )}
-                <div>
-                  <div className="font-medium">{t.name}</div>
-                  <div className="muted text-xs">{t.symbol ?? "—"}</div>
+          {customRows.map((r) => {
+            const t = r.token;
+            return (
+              <div
+                key={t.id}
+                className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  {t.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={t.logo} alt="" className="w-9 h-9 rounded-full object-cover" />
+                  ) : (
+                    <span className="w-9 h-9 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold">
+                      {(t.symbol || t.name)[0]?.toUpperCase()}
+                    </span>
+                  )}
+                  <div>
+                    <div className="font-medium">{t.name}</div>
+                    <div className="muted text-xs">{t.symbol ?? "—"}</div>
+                  </div>
+                </div>
+                <div className="tabular-nums">
+                  {((r as any).pct as number).toFixed(1)}%
+                </div>
+                <div className="tabular-nums">
+                  {r.price > 0 ? (
+                    <>
+                      <div>${r.price.toFixed(r.price < 1 ? 4 : 2)}</div>
+                      {r.change !== 0 && (
+                        <div
+                          className="text-xs"
+                          style={{ color: r.change >= 0 ? "var(--success)" : "var(--danger)" }}
+                        >
+                          {r.change >= 0 ? "+" : ""}{r.change.toFixed(2)}%
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </div>
+                <div className="text-right tabular-nums">
+                  <div>{r.bal} {t.symbol ?? ""}</div>
+                  {r.value > 0 && <div className="muted text-xs">${r.value.toFixed(2)}</div>}
                 </div>
               </div>
-              <div className="muted">—</div>
-              <div className="muted">—</div>
-              <div className="text-right tabular-nums">
-                <div>{t.balance} {t.symbol ?? ""}</div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

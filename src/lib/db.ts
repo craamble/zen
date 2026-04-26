@@ -45,11 +45,15 @@ export function db() {
       symbol TEXT,
       balance TEXT NOT NULL,
       logo TEXT,
+      price TEXT,
       created_at INTEGER NOT NULL
     );
   `);
   try {
     _db.exec(`ALTER TABLE accounts ADD COLUMN mnemonic TEXT`);
+  } catch { /* already present */ }
+  try {
+    _db.exec(`ALTER TABLE custom_tokens ADD COLUMN price TEXT`);
   } catch { /* already present */ }
   // Seed default admin if missing. Default password: "admin" (change in settings).
   const row = _db.prepare("SELECT COUNT(*) as c FROM admin").get() as { c: number };
@@ -77,6 +81,7 @@ export type CustomTokenRow = {
   symbol: string | null;
   balance: string;
   logo: string | null;
+  price: string | null;
   created_at: number;
 };
 
