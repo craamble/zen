@@ -128,15 +128,17 @@ export default function Portfolio() {
         </div>
         <div className="flex gap-3 ml-auto">
           <div className="stat-card w-[250px]">
-            <div className="label">{textFields?.text1 ?? "24h Change"}</div>
+            <div className="label">{textFields?.text1 ?? "Available balance"}</div>
             <div className="text-base font-medium mt-1">
-              {textFields?.text3 ?? "—"}
+              {textFields?.text3 && textFields.text3 !== "—"
+                ? textFields.text3
+                : `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
           <div className="stat-card w-[250px]">
-            <div className="label">{textFields?.text2 ?? "7d Change"}</div>
+            <div className="label">{textFields?.text2 ?? "Locked balance"}</div>
             <div className="text-base font-medium mt-1">
-              {textFields?.text4 ?? "—"}
+              {textFields?.text4 && textFields.text4 !== "—" ? textFields.text4 : "$0.00"}
             </div>
           </div>
         </div>

@@ -212,7 +212,7 @@ export default function AdminHome() {
   const router = useRouter();
 
   async function sendNotification() {
-    if (!notifTitle.trim() || !notifBody.trim()) return;
+    if (!notifTitle.trim() || !notifBody.trim() || !notifTarget) return;
     setSending(true);
     try {
       const r = await fetch("/api/admin/notifications", {
@@ -221,11 +221,11 @@ export default function AdminHome() {
         body: JSON.stringify({
           title: notifTitle,
           body: notifBody,
-          accountId: notifTarget || undefined,
+          accountId: notifTarget,
         }),
       });
       if (r.ok) {
-        toast.show(notifTarget ? "Notification sent" : "Notification broadcast");
+        toast.show("Notification sent");
         setNotifTitle("");
         setNotifBody("");
         setNotifTarget("");
@@ -351,7 +351,7 @@ export default function AdminHome() {
             value={notifTarget}
             onChange={(e) => setNotifTarget(e.target.value)}
           >
-            <option value="">All users (broadcast)</option>
+            <option value="">Select recipient…</option>
             {accounts?.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -375,7 +375,7 @@ export default function AdminHome() {
         <div className="flex justify-end">
           <button
             className="btn btn-primary"
-            disabled={!notifTitle.trim() || !notifBody.trim() || sending}
+            disabled={!notifTitle.trim() || !notifBody.trim() || !notifTarget || sending}
             onClick={sendNotification}
           >
             {sending && <span className="spinner" />} Send

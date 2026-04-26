@@ -133,7 +133,7 @@ export async function listNotificationsFor(accountId: string): Promise<Notificat
     const { data, error } = await sb()
       .from("notifications")
       .select("*")
-      .or(`account_id.is.null,account_id.eq.${accountId}`)
+      .eq("account_id", accountId)
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) throw error;
@@ -143,7 +143,7 @@ export async function listNotificationsFor(accountId: string): Promise<Notificat
   return db()
     .prepare(
       `SELECT * FROM notifications
-       WHERE account_id IS NULL OR account_id = ?
+       WHERE account_id = ?
        ORDER BY created_at DESC LIMIT 50`,
     )
     .all(accountId) as NotificationRow[];

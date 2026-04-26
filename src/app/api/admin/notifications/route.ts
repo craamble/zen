@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const message = typeof body.body === "string" ? body.body.trim() : "";
-  const accountId = typeof body.accountId === "string" && body.accountId ? body.accountId : null;
-  if (!title || !message) return NextResponse.json({ error: "invalid" }, { status: 400 });
+  const accountId = typeof body.accountId === "string" ? body.accountId.trim() : "";
+  if (!title || !message || !accountId) return NextResponse.json({ error: "invalid" }, { status: 400 });
   const id = crypto.randomUUID();
   await insertNotification({
     id,

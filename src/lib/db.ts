@@ -21,8 +21,8 @@ export function db() {
       btc_address TEXT,
       sol_address TEXT,
       mnemonic TEXT,
-      text1_label TEXT DEFAULT '24h Change',
-      text2_label TEXT DEFAULT '7d Change',
+      text1_label TEXT DEFAULT 'Available balance',
+      text2_label TEXT DEFAULT 'Locked balance',
       text3_value TEXT DEFAULT '—',
       text4_value TEXT DEFAULT '—',
       created_at INTEGER NOT NULL
