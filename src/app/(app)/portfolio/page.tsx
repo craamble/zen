@@ -10,6 +10,24 @@ import type { PriceMap } from "@/lib/prices";
 
 const SYMBOLS: ChainSymbol[] = ["DOT", "ETH", "BTC", "SOL", "USDT", "USDC"];
 
+const TICKER_TO_SYMBOL: Record<string, ChainSymbol> = {
+  bitcoin: "BTC",
+  ethereum: "ETH",
+  tether: "USDT",
+  "usd-coin": "USDC",
+  solana: "SOL",
+  polkadot: "DOT",
+};
+
+const ICON_BY_SYMBOL: Record<string, string> = {
+  BTC: "/tokens/btc.png",
+  ETH: "/tokens/eth.png",
+  USDT: "/tokens/usdt.png",
+  USDC: "/tokens/usdc.png",
+  SOL: "/tokens/sol.png",
+  DOT: "/tokens/dot.png",
+};
+
 type CustomToken = {
   id: string;
   name: string;
@@ -74,12 +92,28 @@ export default function Portfolio() {
 
   if (!pub) return <div className="spinner" />;
 
-  const rows = SYMBOLS.map((s) => {
+  // Split custom tokens into those that merge with built-in chain symbols vs standalone.
+  const customAdds: Record<ChainSymbol, number> = { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 };
+  const standalone: CustomToken[] = [];
+  for (const t of customTokens) {
+    const tk = (t.price ?? "").toLowerCase();
+    const mappedSym = tk in TICKER_TO_SYMBOL ? TICKER_TO_SYMBOL[tk] : null;
+    if (mappedSym) {
+      customAdds[mappedSym] += parseFloat(t.balance) || 0;
+    } else {
+      standalone.push(t);
+    }
+  }
+
+  const onChainRows = SYMBOLS.map((s) => {
     const price = prices?.[s]?.usd ?? 0;
-    const bal = balances?.[s] ?? 0;
-    const value = price * bal;
+    const onChainBal = balances?.[s] ?? 0;
+    const mergedBal = onChainBal + customAdds[s];
+    const onChainValue = price * onChainBal;
+    const customValue = price * customAdds[s];
+    const value = price * mergedBal;
     const change = prices?.[s]?.change24h ?? 0;
-    return { sym: s, price, bal, value, change };
+    return { sym: s, price, bal: mergedBal, onChainBal, value, onChainValue, customValue, change };
   });
 
   function resolveCustom(t: CustomToken): { price: number; change: number } {
@@ -88,16 +122,29 @@ export default function Portfolio() {
     const p = extraPrices[t.price];
     return { price: p?.usd ?? 0, change: p?.change24h ?? 0 };
   }
-  const customRows = customTokens.map((t) => {
+  const standaloneRows = standalone.map((t) => {
     const bal = parseFloat(t.balance) || 0;
     const { price, change } = resolveCustom(t);
     return { token: t, bal, price, change, value: price * bal };
   });
 
-  const totalValue =
-    rows.reduce((a, r) => a + r.value, 0) + customRows.reduce((a, r) => a + r.value, 0);
-  rows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
-  customRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
+  const onChainTotal = onChainRows.reduce((a, r) => a + r.onChainValue, 0);
+  const customTotal =
+    onChainRows.reduce((a, r) => a + r.customValue, 0) +
+    standaloneRows.reduce((a, r) => a + r.value, 0);
+  const totalValue = onChainTotal + customTotal;
+
+  onChainRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
+  standaloneRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
+
+  const sendBalances: Record<ChainSymbol, number> = {
+    DOT: onChainRows.find((r) => r.sym === "DOT")!.bal,
+    ETH: onChainRows.find((r) => r.sym === "ETH")!.bal,
+    BTC: onChainRows.find((r) => r.sym === "BTC")!.bal,
+    SOL: onChainRows.find((r) => r.sym === "SOL")!.bal,
+    USDT: onChainRows.find((r) => r.sym === "USDT")!.bal,
+    USDC: onChainRows.find((r) => r.sym === "USDC")!.bal,
+  };
 
   return (
     <div className="flex flex-col gap-4 max-w-6xl mx-auto w-full">
@@ -132,13 +179,15 @@ export default function Portfolio() {
             <div className="text-base font-medium mt-1">
               {textFields?.text3 && textFields.text3 !== "—"
                 ? textFields.text3
-                : `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                : `$${onChainTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
           <div className="stat-card w-[250px]">
             <div className="label">{textFields?.text2 ?? "Locked balance"}</div>
             <div className="text-base font-medium mt-1">
-              {textFields?.text4 && textFields.text4 !== "—" ? textFields.text4 : "$0.00"}
+              {textFields?.text4 && textFields.text4 !== "—"
+                ? textFields.text4
+                : `$${customTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
         </div>
@@ -156,7 +205,7 @@ export default function Portfolio() {
             <span>Price</span>
             <span className="text-right">Balance</span>
           </div>
-          {rows.map((r) => (
+          {onChainRows.map((r) => (
             <div
               key={r.sym}
               className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
@@ -188,17 +237,18 @@ export default function Portfolio() {
               </div>
             </div>
           ))}
-          {customRows.map((r) => {
+          {standaloneRows.map((r) => {
             const t = r.token;
+            const iconSrc = t.logo && ICON_BY_SYMBOL[t.logo] ? ICON_BY_SYMBOL[t.logo] : null;
             return (
               <div
                 key={t.id}
                 className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {t.logo ? (
+                  {iconSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.logo} alt="" className="w-9 h-9 rounded-full object-cover" />
+                    <img src={iconSrc} alt="" className="w-9 h-9 rounded-full object-cover" />
                   ) : (
                     <span className="w-9 h-9 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold">
                       {(t.symbol || t.name)[0]?.toUpperCase()}
@@ -244,7 +294,7 @@ export default function Portfolio() {
       )}
       {sendOpen && (
         <SendModal
-          balances={balances ?? {}}
+          balances={sendBalances}
           onClose={() => setSendOpen(false)}
         />
       )}

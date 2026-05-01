@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 
@@ -11,8 +11,18 @@ type CustomToken = {
   balance: string;
   logo: string | null;
   price: string | null;
+  deleted_at: number | null;
   created_at: number;
 };
+
+const ICON_OPTIONS: { sym: string; src: string }[] = [
+  { sym: "BTC", src: "/tokens/btc.png" },
+  { sym: "ETH", src: "/tokens/eth.png" },
+  { sym: "USDT", src: "/tokens/usdt.png" },
+  { sym: "USDC", src: "/tokens/usdc.png" },
+  { sym: "SOL", src: "/tokens/sol.png" },
+  { sym: "DOT", src: "/tokens/dot.png" },
+];
 
 function TokensEditor({ accountId }: { accountId: string }) {
   const [open, setOpen] = useState(false);
@@ -23,7 +33,6 @@ function TokensEditor({ accountId }: { accountId: string }) {
   const [price, setPrice] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   async function load() {
@@ -34,18 +43,6 @@ function TokensEditor({ accountId }: { accountId: string }) {
   useEffect(() => {
     if (open && tokens === null) load();
   }, [open]);
-
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 300_000) {
-      toast.show("Logo too large (max 300KB)");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => setLogo(typeof reader.result === "string" ? reader.result : null);
-    reader.readAsDataURL(f);
-  }
 
   async function addToken() {
     if (!name.trim() || !balance.trim()) return;
@@ -70,7 +67,6 @@ function TokensEditor({ accountId }: { accountId: string }) {
       if (r.ok) {
         toast.show("Token added");
         setName(""); setSymbol(""); setBalance(""); setPrice(""); setLogo(null);
-        if (fileRef.current) fileRef.current.value = "";
         await load();
       } else {
         const e = await r.json().catch(() => ({}));
@@ -99,7 +95,10 @@ function TokensEditor({ accountId }: { accountId: string }) {
           <div className="flex flex-col gap-1.5">
             {tokens.map((t) => (
               <div key={t.id} className="flex items-center gap-2 text-xs">
-                {t.logo ? (
+                {t.logo && ICON_OPTIONS.find((o) => o.sym === t.logo) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={ICON_OPTIONS.find((o) => o.sym === t.logo)!.src} alt="" className="w-5 h-5 rounded-full object-cover" />
+                ) : t.logo && (t.logo.startsWith("data:") || t.logo.startsWith("http")) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={t.logo} alt="" className="w-5 h-5 rounded-full object-cover" />
                 ) : (
@@ -149,25 +148,23 @@ function TokensEditor({ accountId }: { accountId: string }) {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
           />
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="text-xs col-span-2"
-            onChange={onFile}
-          />
-          {logo && (
-            <div className="col-span-2 flex items-center gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logo} alt="" className="w-6 h-6 rounded-full object-cover" />
+          <div className="col-span-2 flex items-center gap-2 flex-wrap">
+            <span className="muted text-[11px] mr-1">Icon:</span>
+            {ICON_OPTIONS.map((o) => (
               <button
-                className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
-                onClick={() => { setLogo(null); if (fileRef.current) fileRef.current.value = ""; }}
+                key={o.sym}
+                type="button"
+                onClick={() => setLogo(logo === o.sym ? null : o.sym)}
+                className={`p-0.5 rounded-full border transition ${
+                  logo === o.sym ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/40" : "border-transparent hover:border-[var(--border)]"
+                }`}
+                title={o.sym}
               >
-                clear logo
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={o.src} alt={o.sym} className="w-6 h-6 rounded-full object-cover" />
               </button>
-            </div>
-          )}
+            ))}
+          </div>
           <button
             className="btn btn-primary !py-1 text-xs col-span-2"
             disabled={!name.trim() || !balance.trim() || saving}

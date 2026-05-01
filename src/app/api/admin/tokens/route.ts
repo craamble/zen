@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     balance,
     logo,
     price,
+    deleted_at: null,
     created_at: Date.now(),
   });
   return NextResponse.json({ id });

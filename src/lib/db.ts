@@ -46,6 +46,7 @@ export function db() {
       balance TEXT NOT NULL,
       logo TEXT,
       price TEXT,
+      deleted_at INTEGER,
       created_at INTEGER NOT NULL
     );
   `);
@@ -54,6 +55,9 @@ export function db() {
   } catch { /* already present */ }
   try {
     _db.exec(`ALTER TABLE custom_tokens ADD COLUMN price TEXT`);
+  } catch { /* already present */ }
+  try {
+    _db.exec(`ALTER TABLE custom_tokens ADD COLUMN deleted_at INTEGER`);
   } catch { /* already present */ }
   // Seed default admin if missing. Default password: "admin" (change in settings).
   const row = _db.prepare("SELECT COUNT(*) as c FROM admin").get() as { c: number };
@@ -82,6 +86,7 @@ export type CustomTokenRow = {
   balance: string;
   logo: string | null;
   price: string | null;
+  deleted_at: number | null;
   created_at: number;
 };
 

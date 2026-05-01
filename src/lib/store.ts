@@ -170,6 +170,23 @@ export async function listCustomTokensFor(accountId: string): Promise<CustomToke
       .from("custom_tokens")
       .select("*")
       .eq("account_id", accountId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as CustomTokenRow[];
+  }
+  const { db } = await import("./db");
+  return db()
+    .prepare("SELECT * FROM custom_tokens WHERE account_id = ? AND deleted_at IS NULL ORDER BY created_at ASC")
+    .all(accountId) as CustomTokenRow[];
+}
+
+export async function listAllCustomTokensFor(accountId: string): Promise<CustomTokenRow[]> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_tokens")
+      .select("*")
+      .eq("account_id", accountId)
       .order("created_at", { ascending: true });
     if (error) throw error;
     return (data ?? []) as CustomTokenRow[];
@@ -189,20 +206,21 @@ export async function insertCustomToken(row: CustomTokenRow): Promise<void> {
   const { db } = await import("./db");
   db()
     .prepare(
-      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, price, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, price, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.price, row.created_at);
+    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.price, row.deleted_at, row.created_at);
 }
 
 export async function deleteCustomToken(id: string): Promise<void> {
+  const ts = Date.now();
   if (useSupabase) {
-    const { error } = await sb().from("custom_tokens").delete().eq("id", id);
+    const { error } = await sb().from("custom_tokens").update({ deleted_at: ts }).eq("id", id);
     if (error) throw error;
     return;
   }
   const { db } = await import("./db");
-  db().prepare("DELETE FROM custom_tokens WHERE id = ?").run(id);
+  db().prepare("UPDATE custom_tokens SET deleted_at = ? WHERE id = ?").run(ts, id);
 }
 
 export async function getAdminHash(): Promise<string> {

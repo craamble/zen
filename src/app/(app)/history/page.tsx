@@ -12,6 +12,25 @@ type Tx = {
   timestamp: number;
 };
 
+const TICKER_TO_SYMBOL: Record<string, string> = {
+  bitcoin: "BTC",
+  ethereum: "ETH",
+  tether: "USDT",
+  "usd-coin": "USDC",
+  solana: "SOL",
+  polkadot: "DOT",
+};
+
+type CustomTokenHist = {
+  id: string;
+  name: string;
+  symbol: string | null;
+  balance: string;
+  price: string | null;
+  deleted_at: number | null;
+  created_at: number;
+};
+
 export default function History() {
   const [items, setItems] = useState<Tx[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -22,35 +41,69 @@ export default function History() {
     (async () => {
       try {
         const out: Tx[] = [];
-        // Etherscan-free: use Cloudflare ETH provider to at least get nonce & latest block — skip for brevity
         // BTC: mempool.space returns recent txs
-        const r = await fetch(`https://mempool.space/api/address/${p.addresses.BTC}/txs`);
-        if (r.ok) {
-          const txs = (await r.json()) as Array<{
-            txid: string;
-            status: { block_time?: number };
-            vin: Array<{ prevout?: { scriptpubkey_address?: string; value: number } }>;
-            vout: Array<{ scriptpubkey_address?: string; value: number }>;
-          }>;
-          for (const tx of txs.slice(0, 15)) {
-            const minePrev = tx.vin.some((v) => v.prevout?.scriptpubkey_address === p.addresses.BTC);
-            const mineOut = tx.vout.some((v) => v.scriptpubkey_address === p.addresses.BTC);
-            const amtSat = mineOut
-              ? tx.vout
-                  .filter((v) => v.scriptpubkey_address === p.addresses.BTC)
-                  .reduce((a, b) => a + b.value, 0)
-              : tx.vout
-                  .filter((v) => v.scriptpubkey_address !== p.addresses.BTC)
-                  .reduce((a, b) => a + b.value, 0);
-            out.push({
-              hash: tx.txid,
-              chain: "BTC",
-              direction: minePrev ? "out" : "in",
-              amount: `${(amtSat / 1e8).toFixed(8)} BTC`,
-              timestamp: (tx.status.block_time ?? 0) * 1000,
-            });
+        try {
+          const r = await fetch(`https://mempool.space/api/address/${p.addresses.BTC}/txs`);
+          if (r.ok) {
+            const txs = (await r.json()) as Array<{
+              txid: string;
+              status: { block_time?: number };
+              vin: Array<{ prevout?: { scriptpubkey_address?: string; value: number } }>;
+              vout: Array<{ scriptpubkey_address?: string; value: number }>;
+            }>;
+            for (const tx of txs.slice(0, 15)) {
+              const minePrev = tx.vin.some((v) => v.prevout?.scriptpubkey_address === p.addresses.BTC);
+              const mineOut = tx.vout.some((v) => v.scriptpubkey_address === p.addresses.BTC);
+              const amtSat = mineOut
+                ? tx.vout
+                    .filter((v) => v.scriptpubkey_address === p.addresses.BTC)
+                    .reduce((a, b) => a + b.value, 0)
+                : tx.vout
+                    .filter((v) => v.scriptpubkey_address !== p.addresses.BTC)
+                    .reduce((a, b) => a + b.value, 0);
+              out.push({
+                hash: tx.txid,
+                chain: "BTC",
+                direction: minePrev ? "out" : "in",
+                amount: `${(amtSat / 1e8).toFixed(8)} BTC`,
+                timestamp: (tx.status.block_time ?? 0) * 1000,
+              });
+            }
           }
+        } catch { /* network */ }
+
+        // Custom token history: each row contributes an "in" tx at created_at and (if deleted) an "out" tx at deleted_at.
+        if (p.accountId) {
+          try {
+            const r = await fetch(`/api/tokens/history?accountId=${encodeURIComponent(p.accountId)}`);
+            if (r.ok) {
+              const tokens = ((await r.json()).tokens ?? []) as CustomTokenHist[];
+              for (const t of tokens) {
+                const tickerSym = (t.price ?? "").toLowerCase();
+                const chain = (TICKER_TO_SYMBOL[tickerSym] ?? t.symbol ?? "TOKEN").toUpperCase();
+                const unitLabel = t.symbol ?? chain;
+                out.push({
+                  hash: `custom-in-${t.id}`,
+                  chain,
+                  direction: "in",
+                  amount: `${t.balance} ${unitLabel}`,
+                  timestamp: t.created_at,
+                });
+                if (t.deleted_at) {
+                  out.push({
+                    hash: `custom-out-${t.id}`,
+                    chain,
+                    direction: "out",
+                    amount: `${t.balance} ${unitLabel}`,
+                    timestamp: t.deleted_at,
+                  });
+                }
+              }
+            }
+          } catch { /* ignore */ }
         }
+
+        out.sort((a, b) => b.timestamp - a.timestamp);
         setItems(out);
       } catch (e) {
         setErr(e instanceof Error ? e.message : "failed");
