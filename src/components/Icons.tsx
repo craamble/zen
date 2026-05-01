@@ -68,6 +68,28 @@ export const IconBell = ({ size, className }: P) => (
     <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
   </svg>
 );
+export const IconEye = ({ size, className }: P) => (
+  <svg {...s(size)} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+export const IconEyeOff = ({ size, className }: P) => (
+  <svg {...s(size)} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-6.5 0-10-7-10-7a18.62 18.62 0 0 1 4.16-5.19" />
+    <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19" />
+    <path d="M9.88 9.88a3 3 0 0 0 4.24 4.24" />
+    <path d="M1 1l22 22" />
+  </svg>
+);
+export const IconRefresh = ({ size, className }: P) => (
+  <svg {...s(size)} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+    <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M3 21v-5h5" />
+  </svg>
+);
 export const IconHelp = ({ size, className }: P) => (
   <svg {...s(size)} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />
