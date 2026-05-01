@@ -16,12 +16,12 @@ type CustomToken = {
 };
 
 const ICON_OPTIONS: { sym: string; src: string }[] = [
-  { sym: "BTC", src: "/tokens/btc.png" },
-  { sym: "ETH", src: "/tokens/eth.png" },
-  { sym: "USDT", src: "/tokens/usdt.png" },
-  { sym: "USDC", src: "/tokens/usdc.png" },
-  { sym: "SOL", src: "/tokens/sol.png" },
-  { sym: "DOT", src: "/tokens/dot.png" },
+  { sym: "BTC", src: "/tokens/1.gif" },
+  { sym: "ETH", src: "/tokens/1027.png" },
+  { sym: "USDT", src: "/tokens/825.png" },
+  { sym: "USDC", src: "/tokens/3408.png" },
+  { sym: "SOL", src: "/tokens/5426.gif" },
+  { sym: "DOT", src: "/tokens/6636.png" },
 ];
 
 function TokensEditor({ accountId }: { accountId: string }) {
