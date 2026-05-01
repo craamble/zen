@@ -97,15 +97,22 @@ function SendDetail({
     try {
       const vault = loadVault();
       if (!vault) throw new Error("no vault");
-      const mnemonic = await decryptMnemonic(vault, password);
+      let mnemonic: string;
+      try {
+        mnemonic = await decryptMnemonic(vault, password);
+      } catch {
+        setResult({ err: "Wrong password. Please try again." });
+        setStep("confirm");
+        return;
+      }
       const { send } = await import("@/lib/send");
       setStep("submitting");
       const hash = await send(mnemonic, sym, to, amount);
       setResult({ hash });
       setStep("done");
       toast.show("Transaction broadcast");
-    } catch (e) {
-      setResult({ err: e instanceof Error ? e.message : "failed" });
+    } catch {
+      setResult({ err: "Couldn't broadcast the transaction. Please try again later." });
       setStep("confirm");
     } finally {
       setBusy(false);

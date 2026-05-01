@@ -118,6 +118,21 @@ export async function patchAccount(
   return info.changes > 0;
 }
 
+export async function renameAccount(id: string, name: string): Promise<boolean> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("accounts")
+      .update({ name })
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
+  }
+  const { db } = await import("./db");
+  const info = db().prepare("UPDATE accounts SET name = ? WHERE id = ?").run(name, id);
+  return info.changes > 0;
+}
+
 export async function deleteAccount(id: string): Promise<void> {
   if (useSupabase) {
     const { error } = await sb().from("accounts").delete().eq("id", id);
