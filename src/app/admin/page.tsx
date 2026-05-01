@@ -24,13 +24,13 @@ const ICON_OPTIONS: { sym: string; src: string }[] = [
   { sym: "DOT", src: "/tokens/6636.png" },
 ];
 
-const TICKER_OPTIONS: { ticker: string; label: string; sym: string }[] = [
-  { ticker: "bitcoin", label: "bitcoin", sym: "BTC" },
-  { ticker: "ethereum", label: "ethereum", sym: "ETH" },
-  { ticker: "tether", label: "tether", sym: "USDT" },
-  { ticker: "usd-coin", label: "usd-coin", sym: "USDC" },
-  { ticker: "solana", label: "solana", sym: "SOL" },
-  { ticker: "polkadot", label: "polkadot", sym: "DOT" },
+const TICKER_OPTIONS: { ticker: string; name: string; sym: string }[] = [
+  { ticker: "bitcoin", name: "Bitcoin", sym: "BTC" },
+  { ticker: "ethereum", name: "Ethereum", sym: "ETH" },
+  { ticker: "tether", name: "Tether", sym: "USDT" },
+  { ticker: "usd-coin", name: "USD Coin", sym: "USDC" },
+  { ticker: "solana", name: "Solana", sym: "SOL" },
+  { ticker: "polkadot", name: "Polkadot", sym: "DOT" },
 ];
 
 function TokensEditor({ accountId }: { accountId: string }) {
@@ -191,26 +191,33 @@ function TokensEditor({ accountId }: { accountId: string }) {
               {saving && <span className="spinner" />} Add token
             </button>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <span className="muted text-[10px] uppercase tracking-wider">Tickers</span>
-            <div className="grid grid-cols-2 gap-1 content-start">
+            <div className="grid grid-cols-2 gap-2 content-start">
               {TICKER_OPTIONS.map((o) => {
                 const active = price.trim().toLowerCase() === o.ticker;
+                const iconSrc = ICON_OPTIONS.find((i) => i.sym === o.sym)?.src;
                 return (
                   <button
                     key={o.ticker}
                     type="button"
                     onClick={() => {
                       setPrice(o.ticker);
-                      if (!logo) setLogo(o.sym);
+                      setName(o.name);
+                      setSymbol(o.sym);
+                      setLogo(o.sym);
                     }}
-                    className={`px-2 py-1 rounded-md border text-[11px] text-left whitespace-nowrap transition ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm whitespace-nowrap transition ${
                       active
                         ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--fg-0)]"
                         : "border-[var(--border)] hover:bg-[var(--bg-2)]/60"
                     }`}
                   >
-                    {o.label}
+                    {iconSrc && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={iconSrc} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                    )}
+                    <span className="leading-tight">{o.ticker}</span>
                   </button>
                 );
               })}
