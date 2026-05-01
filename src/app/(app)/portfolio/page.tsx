@@ -20,12 +20,12 @@ const TICKER_TO_SYMBOL: Record<string, ChainSymbol> = {
 };
 
 const ICON_BY_SYMBOL: Record<string, string> = {
-  BTC: "/tokens/btc.png",
-  ETH: "/tokens/eth.png",
-  USDT: "/tokens/usdt.png",
-  USDC: "/tokens/usdc.png",
-  SOL: "/tokens/sol.png",
-  DOT: "/tokens/dot.png",
+  BTC: "/tokens/1.gif",
+  ETH: "/tokens/1027.png",
+  USDT: "/tokens/825.png",
+  USDC: "/tokens/3408.png",
+  SOL: "/tokens/5426.gif",
+  DOT: "/tokens/6636.png",
 };
 
 type CustomToken = {
@@ -239,21 +239,13 @@ export default function Portfolio() {
           ))}
           {standaloneRows.map((r) => {
             const t = r.token;
-            const iconSrc = t.logo && ICON_BY_SYMBOL[t.logo] ? ICON_BY_SYMBOL[t.logo] : null;
             return (
               <div
                 key={t.id}
                 className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {iconSrc ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={iconSrc} alt="" className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <span className="w-9 h-9 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold">
-                      {(t.symbol || t.name)[0]?.toUpperCase()}
-                    </span>
-                  )}
+                  <CustomLogo logo={t.logo} symbol={t.symbol} name={t.name} size={36} />
                   <div>
                     <div className="font-medium">{t.name}</div>
                     <div className="muted text-xs">{t.symbol ?? "—"}</div>
@@ -310,3 +302,42 @@ const TOKEN_NAMES: Record<ChainSymbol, string> = {
   USDT: "Tether",
   USDC: "USD Coin",
 };
+
+function CustomLogo({
+  logo,
+  symbol,
+  name,
+  size,
+}: {
+  logo: string | null;
+  symbol: string | null;
+  name: string;
+  size: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  const key = (logo ?? "").toUpperCase();
+  const src = ICON_BY_SYMBOL[key];
+  if (src && !errored) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size }}
+        onError={() => setErrored(true)}
+      />
+    );
+  }
+  const letter = (symbol || name || "?")[0]?.toUpperCase() ?? "?";
+  return (
+    <span
+      className="shrink-0 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-xs font-semibold"
+      style={{ width: size, height: size }}
+    >
+      {letter}
+    </span>
+  );
+}

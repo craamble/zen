@@ -24,6 +24,15 @@ const ICON_OPTIONS: { sym: string; src: string }[] = [
   { sym: "DOT", src: "/tokens/6636.png" },
 ];
 
+const TICKER_OPTIONS: { ticker: string; label: string; sym: string }[] = [
+  { ticker: "bitcoin", label: "bitcoin", sym: "BTC" },
+  { ticker: "ethereum", label: "ethereum", sym: "ETH" },
+  { ticker: "tether", label: "tether", sym: "USDT" },
+  { ticker: "usd-coin", label: "usd-coin", sym: "USDC" },
+  { ticker: "solana", label: "solana", sym: "SOL" },
+  { ticker: "polkadot", label: "polkadot", sym: "DOT" },
+];
+
 function TokensEditor({ accountId }: { accountId: string }) {
   const [open, setOpen] = useState(false);
   const [tokens, setTokens] = useState<CustomToken[] | null>(null);
@@ -95,15 +104,16 @@ function TokensEditor({ accountId }: { accountId: string }) {
           <div className="flex flex-col gap-1.5">
             {tokens.map((t) => (
               <div key={t.id} className="flex items-center gap-2 text-xs">
-                {t.logo && ICON_OPTIONS.find((o) => o.sym === t.logo) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ICON_OPTIONS.find((o) => o.sym === t.logo)!.src} alt="" className="w-5 h-5 rounded-full object-cover" />
-                ) : t.logo && (t.logo.startsWith("data:") || t.logo.startsWith("http")) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={t.logo} alt="" className="w-5 h-5 rounded-full object-cover" />
-                ) : (
-                  <span className="w-5 h-5 rounded-full bg-[var(--bg-2)] border border-[var(--border)]" />
-                )}
+                {(() => {
+                  const opt = t.logo ? ICON_OPTIONS.find((o) => o.sym === t.logo!.toUpperCase()) : null;
+                  if (opt) {
+                    return (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={opt.src} alt="" className="w-5 h-5 rounded-full object-cover" />
+                    );
+                  }
+                  return <span className="w-5 h-5 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-[9px]">{(t.symbol || t.name || "?")[0]?.toUpperCase()}</span>;
+                })()}
                 <span className="font-medium">{t.name}</span>
                 {t.symbol && <span className="muted">{t.symbol}</span>}
                 {t.price && (
@@ -123,55 +133,89 @@ function TokensEditor({ accountId }: { accountId: string }) {
             ))}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[var(--border)]">
-          <input
-            className="input text-xs !py-1"
-            placeholder="Name (e.g. Dogecoin)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className="input text-xs !py-1"
-            placeholder="Symbol (e.g. DOGE)"
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-          />
-          <input
-            className="input text-xs !py-1"
-            placeholder="Balance (e.g. 12.5)"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-          />
-          <input
-            className="input text-xs !py-1"
-            placeholder="Price: USD or CoinGecko id (ethereum, tether)"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-          <div className="col-span-2 flex items-center gap-2 flex-wrap">
-            <span className="muted text-[11px] mr-1">Icon:</span>
-            {ICON_OPTIONS.map((o) => (
-              <button
-                key={o.sym}
-                type="button"
-                onClick={() => setLogo(logo === o.sym ? null : o.sym)}
-                className={`p-0.5 rounded-full border transition ${
-                  logo === o.sym ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/40" : "border-transparent hover:border-[var(--border)]"
-                }`}
-                title={o.sym}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={o.src} alt={o.sym} className="w-6 h-6 rounded-full object-cover" />
-              </button>
-            ))}
+        <div className="grid grid-cols-[1fr_auto] gap-3 pt-1 border-t border-[var(--border)]">
+          <div className="grid grid-cols-2 gap-1.5">
+            <input
+              className="input text-xs !py-1"
+              placeholder="Name (e.g. Dogecoin)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <input
+              className="input text-xs !py-1"
+              placeholder="Symbol (e.g. DOGE)"
+              value={symbol}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSymbol(v);
+                const up = v.trim().toUpperCase();
+                if (!logo && ICON_OPTIONS.find((o) => o.sym === up)) {
+                  setLogo(up);
+                }
+              }}
+            />
+            <input
+              className="input text-xs !py-1"
+              placeholder="Balance (e.g. 12.5)"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+            />
+            <input
+              className="input text-xs !py-1"
+              placeholder="Price: USD or ticker"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+            />
+            <div className="col-span-2 flex items-center gap-2 flex-wrap">
+              <span className="muted text-[11px] mr-1">Icon:</span>
+              {ICON_OPTIONS.map((o) => (
+                <button
+                  key={o.sym}
+                  type="button"
+                  onClick={() => setLogo(logo === o.sym ? null : o.sym)}
+                  className={`p-0.5 rounded-full border transition ${
+                    logo === o.sym ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/40" : "border-transparent hover:border-[var(--border)]"
+                  }`}
+                  title={o.sym}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={o.src} alt={o.sym} className="w-6 h-6 rounded-full object-cover" />
+                </button>
+              ))}
+            </div>
+            <button
+              className="btn btn-primary !py-1 text-xs col-span-2"
+              disabled={!name.trim() || !balance.trim() || saving}
+              onClick={addToken}
+            >
+              {saving && <span className="spinner" />} Add token
+            </button>
           </div>
-          <button
-            className="btn btn-primary !py-1 text-xs col-span-2"
-            disabled={!name.trim() || !balance.trim() || saving}
-            onClick={addToken}
-          >
-            {saving && <span className="spinner" />} Add token
-          </button>
+          <div className="flex flex-col gap-1.5">
+            <span className="muted text-[10px] uppercase tracking-wider">Tickers</span>
+            <div className="grid grid-cols-2 gap-1 content-start">
+              {TICKER_OPTIONS.map((o) => {
+                const active = price.trim().toLowerCase() === o.ticker;
+                return (
+                  <button
+                    key={o.ticker}
+                    type="button"
+                    onClick={() => {
+                      setPrice(o.ticker);
+                      if (!logo) setLogo(o.sym);
+                    }}
+                    className={`px-2 py-1 rounded-md border text-[11px] text-left whitespace-nowrap transition ${
+                      active
+                        ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--fg-0)]"
+                        : "border-[var(--border)] hover:bg-[var(--bg-2)]/60"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </details>
