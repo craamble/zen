@@ -1,12 +1,12 @@
 import type { ChainSymbol } from "@/lib/wallet";
 
 const SRC: Record<ChainSymbol, string> = {
-  BTC: "/tokens/btc.png",
-  ETH: "/tokens/eth.png",
-  USDT: "/tokens/usdt.png",
-  USDC: "/tokens/usdc.png",
-  SOL: "/tokens/sol.png",
-  DOT: "/tokens/dot.png",
+  BTC: "/tokens/1.gif",
+  ETH: "/tokens/1027.png",
+  USDT: "/tokens/825.png",
+  USDC: "/tokens/3408.png",
+  SOL: "/tokens/5426.gif",
+  DOT: "/tokens/6636.png",
 };
 
 export function TokenIcon({ symbol, size = 32 }: { symbol: ChainSymbol; size?: number }) {
