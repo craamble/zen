@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <div className="min-h-screen flex">
-        <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-1)]/40 backdrop-blur-xl flex flex-col h-screen sticky top-0 self-start overflow-y-auto">
+        <aside className="hidden md:flex w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-1)]/40 backdrop-blur-xl flex-col h-screen sticky top-0 self-start overflow-y-auto">
           <div className="p-6 flex items-center justify-center">
             <Logo size={120} />
           </div>
@@ -95,10 +95,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="relative z-40 flex items-center justify-end gap-3 px-8 py-4 border-b border-[var(--border)] bg-[var(--bg-1)]/20 backdrop-blur-md">
+          <header className="relative z-40 flex items-center gap-2 md:gap-3 px-4 md:px-8 py-3 md:py-4 border-b border-[var(--border)] bg-[var(--bg-1)]/20 backdrop-blur-md">
+            <Link href="/portfolio" className="md:hidden flex items-center" aria-label="Home">
+              <Logo size={32} />
+            </Link>
+            <div className="flex-1 md:hidden" />
+            <div className="hidden md:block flex-1" />
             {pub?.accountId && <NotificationsBell accountId={pub.accountId} />}
             {pub && (
-              <div className="flex items-center gap-2.5 pl-1 pr-3 py-1 rounded-full bg-[var(--bg-2)]/50 border border-[var(--border)]">
+              <div className="flex items-center gap-2.5 pl-1 pr-2 md:pr-3 py-1 rounded-full bg-[var(--bg-2)]/50 border border-[var(--border)]">
                 <span
                   className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
                   style={{
@@ -108,11 +113,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   {initial}
                 </span>
-                <span className="text-sm">{pub.accountName}</span>
+                <span className="hidden sm:inline text-sm truncate max-w-[120px]">{pub.accountName}</span>
               </div>
             )}
             <button
-              className="btn btn-ghost !p-2.5"
+              className="btn btn-ghost !p-2 md:!p-2.5"
               aria-label="Lock wallet"
               title="Lock wallet"
               onClick={onLock}
@@ -120,8 +125,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <IconLock />
             </button>
           </header>
-          <div className="flex-1 px-8 py-10">{children}</div>
+          <div className="flex-1 px-4 md:px-8 py-6 md:py-10 pb-24 md:pb-10">{children}</div>
         </div>
+
+        {/* Mobile bottom nav */}
+        <nav
+          className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--bg-1)]/85 backdrop-blur-xl"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <div className="grid grid-cols-3">
+            {nav.map((n) => {
+              const active = pathname === n.href || pathname.startsWith(n.href + "/");
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  className={`flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] transition-colors ${
+                    active ? "text-[var(--accent)]" : "text-[var(--fg-1)]"
+                  }`}
+                >
+                  <span>{n.icon}</span>
+                  {n.label}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </ToastProvider>
   );

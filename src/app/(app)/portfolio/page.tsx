@@ -217,22 +217,22 @@ export default function Portfolio() {
         </div>
       </div>
 
-      <section className="glass-card p-5 flex flex-wrap items-center gap-6">
+      <section className="glass-card p-4 md:p-5 flex flex-col md:flex-row md:flex-wrap md:items-center gap-4 md:gap-6">
         <div>
           <div className="label">Total balance</div>
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="muted text-lg font-medium">$</span>
-            <span className="text-[2.25rem] leading-none font-semibold tabular-nums tracking-tight">
+            <span className="text-[1.75rem] md:text-[2.25rem] leading-none font-semibold tabular-nums tracking-tight break-all">
               {hidden
                 ? mask
                 : totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-        <div className="flex gap-3 ml-auto">
-          <div className="stat-card w-[250px]">
+        <div className="flex flex-col sm:flex-row gap-2 md:gap-3 md:ml-auto w-full md:w-auto">
+          <div className="stat-card w-full sm:w-[180px] md:w-[250px]">
             <div className="label">{textFields?.text1 ?? "Available balance"}</div>
-            <div className="text-base font-medium mt-1">
+            <div className="text-base font-medium mt-1 break-all">
               {hidden
                 ? mask
                 : textFields?.text3 && textFields.text3 !== "—"
@@ -240,9 +240,9 @@ export default function Portfolio() {
                 : `$${onChainTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
-          <div className="stat-card w-[250px]">
+          <div className="stat-card w-full sm:w-[180px] md:w-[250px]">
             <div className="label">{textFields?.text2 ?? "Locked balance"}</div>
-            <div className="text-base font-medium mt-1">
+            <div className="text-base font-medium mt-1 break-all">
               {hidden
                 ? mask
                 : textFields?.text4 && textFields.text4 !== "—"
@@ -259,7 +259,7 @@ export default function Portfolio() {
           {loadingBal && <span className="chip"><span className="spinner" /> loading balances</span>}
         </div>
         <div className="glass-card overflow-hidden">
-          <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-3 border-b border-[var(--border)] text-xs label">
+          <div className="hidden sm:grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-3 border-b border-[var(--border)] text-xs label">
             <span>Token</span>
             <span>Portfolio %</span>
             <span>Price</span>
@@ -268,19 +268,22 @@ export default function Portfolio() {
           {onChainRows.map((r) => (
             <div
               key={r.sym}
-              className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
+              className="grid grid-cols-[1.4fr_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <TokenIcon symbol={r.sym} size={36} />
-                <div>
-                  <div className="font-medium">{TOKEN_NAMES[r.sym]}</div>
-                  <div className="muted text-xs">{r.sym}</div>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{TOKEN_NAMES[r.sym]}</div>
+                  <div className="muted text-xs">
+                    <span className="sm:hidden">${r.price.toFixed(r.price < 1 ? 4 : 2)}</span>
+                    <span className="hidden sm:inline">{r.sym}</span>
+                  </div>
                 </div>
               </div>
-              <div className="tabular-nums">
+              <div className="hidden sm:block tabular-nums">
                 {((r as any).pct as number).toFixed(1)}%
               </div>
-              <div className="tabular-nums">
+              <div className="hidden sm:block tabular-nums">
                 <div>${r.price.toFixed(r.price < 1 ? 4 : 2)}</div>
                 {r.change !== 0 && (
                   <div
@@ -302,19 +305,22 @@ export default function Portfolio() {
             return (
               <div
                 key={t.id}
-                className="grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
+                className="grid grid-cols-[1.4fr_auto] sm:grid-cols-[1.5fr_1fr_1fr_1fr] gap-2 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--border)] last:border-b-0 items-center hover:bg-[var(--bg-2)]/40 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <CustomLogo logo={t.logo} symbol={t.symbol} name={t.name} size={36} />
-                  <div>
-                    <div className="font-medium">{t.name}</div>
-                    <div className="muted text-xs">{t.symbol ?? "—"}</div>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{t.name}</div>
+                    <div className="muted text-xs">
+                      <span className="sm:hidden">{r.price > 0 ? `$${r.price.toFixed(r.price < 1 ? 4 : 2)}` : (t.symbol ?? "—")}</span>
+                      <span className="hidden sm:inline">{t.symbol ?? "—"}</span>
+                    </div>
                   </div>
                 </div>
-                <div className="tabular-nums">
+                <div className="hidden sm:block tabular-nums">
                   {((r as any).pct as number).toFixed(1)}%
                 </div>
-                <div className="tabular-nums">
+                <div className="hidden sm:block tabular-nums">
                   {r.price > 0 ? (
                     <>
                       <div>${r.price.toFixed(r.price < 1 ? 4 : 2)}</div>
