@@ -332,8 +332,10 @@ export default function Portfolio() {
                   )}
                 </div>
                 <div className="text-right tabular-nums">
-                  <div>{r.bal} {t.symbol ?? ""}</div>
-                  {r.value > 0 && <div className="muted text-xs">${r.value.toFixed(2)}</div>}
+                  <div>{hidden ? mask : `${r.bal} ${t.symbol ?? ""}`}</div>
+                  {r.value > 0 && (
+                    <div className="muted text-xs">{hidden ? mask : `$${r.value.toFixed(2)}`}</div>
+                  )}
                 </div>
               </div>
             );

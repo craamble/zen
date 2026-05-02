@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <div className="min-h-screen flex">
-        <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-1)]/40 backdrop-blur-xl flex flex-col">
+        <aside className="w-64 shrink-0 border-r border-[var(--border)] bg-[var(--bg-1)]/40 backdrop-blur-xl flex flex-col h-screen sticky top-0 self-start overflow-y-auto">
           <div className="p-6 flex items-center justify-center">
             <Logo size={120} />
           </div>
