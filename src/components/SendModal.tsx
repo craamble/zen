@@ -189,7 +189,7 @@ function SendDetail({
       }
       const { send } = await import("@/lib/send");
       setStep("submitting");
-      const hash = await send(mnemonic, sym, to, amount);
+      const hash = await send(mnemonic, sym, to.trim(), amount.trim());
       setResult({ hash });
       setStep("done");
       toast.show("Transaction broadcast");
@@ -344,7 +344,19 @@ function SendDetail({
             </div>
             <p className="text-sm">Transaction submitted.</p>
             {result?.hash && (
-              <code className="text-[11px] font-mono break-all subtle text-center">{result.hash}</code>
+              <>
+                <code className="text-[11px] font-mono break-all subtle text-center">{result.hash}</code>
+                {explorerUrl(sym, result.hash) && (
+                  <a
+                    href={explorerUrl(sym, result.hash) ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[var(--accent)] underline"
+                  >
+                    View on explorer →
+                  </a>
+                )}
+              </>
             )}
             <button className="btn btn-primary" onClick={onClose}>
               Done
@@ -354,6 +366,18 @@ function SendDetail({
       </div>
     </div>
   );
+}
+
+function explorerUrl(sym: ChainSymbol, hash: string): string | null {
+  switch (sym) {
+    case "BTC": return `https://mempool.space/tx/${hash}`;
+    case "ETH":
+    case "USDT":
+    case "USDC": return `https://etherscan.io/tx/${hash}`;
+    case "SOL": return `https://solscan.io/tx/${hash}`;
+    case "DOT": return `https://polkadot.subscan.io/extrinsic/${hash}`;
+    default: return null;
+  }
 }
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {

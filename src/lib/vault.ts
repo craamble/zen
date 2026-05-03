@@ -86,6 +86,22 @@ export function loadVault(): Vault | null {
 export function clearVault() {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(PUBLIC_KEY);
+  // Also drop any cached portfolio data tied to this wallet so the next user
+  // doesn't see the previous owner's balances flash on screen.
+  for (const k of [
+    "zenwallet.balances.v1",
+    "zenwallet.prices.v1",
+    "zenwallet.hideBalances.v1",
+  ]) {
+    localStorage.removeItem(k);
+  }
+  // Clear per-account notification read markers (prefix match).
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("zenwallet.notif.lastRead.")) localStorage.removeItem(key);
+    }
+  } catch { /* ignore */ }
   sessionStorage.removeItem(SESSION_KEY);
 }
 

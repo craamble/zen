@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { loadPublic } from "@/lib/vault";
 import { TokenIcon } from "@/components/TokenIcon";
 import type { ChainSymbol } from "@/lib/wallet";
+import type { PublicKey as SolPublicKey } from "@solana/web3.js";
 
 type Tx = {
   hash: string;
@@ -95,42 +96,55 @@ export default function History() {
           const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
           const pk = new PublicKey(p.addresses.SOL);
           const sigs = await conn.getSignaturesForAddress(pk, { limit: 10 });
-          for (const s of sigs) {
-            try {
-              const tx = await conn.getTransaction(s.signature, {
-                maxSupportedTransactionVersion: 0,
-              });
-              if (!tx?.meta || !tx.transaction) continue;
-              const keys = tx.transaction.message.staticAccountKeys ??
-                tx.transaction.message.getAccountKeys?.().staticAccountKeys ?? [];
-              const idx = keys.findIndex((k) => k.toBase58() === p.addresses.SOL);
-              if (idx === -1) continue;
-              const pre = tx.meta.preBalances?.[idx] ?? 0;
-              const post = tx.meta.postBalances?.[idx] ?? 0;
-              const delta = post - pre;
-              if (delta === 0) continue;
-              const direction: "in" | "out" = delta > 0 ? "in" : "out";
-              // Counterparty heuristic: pick the other key whose balance changed in the opposite sign.
-              let counterparty = "unknown";
-              for (let i = 0; i < keys.length; i++) {
-                if (i === idx) continue;
-                const dPre = tx.meta.preBalances?.[i] ?? 0;
-                const dPost = tx.meta.postBalances?.[i] ?? 0;
-                const d = dPost - dPre;
-                if ((direction === "in" && d < 0) || (direction === "out" && d > 0)) {
-                  counterparty = keys[i].toBase58();
-                  break;
-                }
+          // Fetch all txs in parallel — the public RPC tolerates this far better than serial bursts.
+          const txs = await Promise.allSettled(
+            sigs.map((s) =>
+              conn.getTransaction(s.signature, { maxSupportedTransactionVersion: 0 }),
+            ),
+          );
+          for (let si = 0; si < sigs.length; si++) {
+            const s = sigs[si];
+            const result = txs[si];
+            if (result.status !== "fulfilled" || !result.value?.meta || !result.value?.transaction) continue;
+            const tx = result.value;
+            const meta = tx.meta;
+            if (!meta) continue;
+            const msg = tx.transaction.message as unknown as {
+              staticAccountKeys?: SolPublicKey[];
+              accountKeys?: SolPublicKey[];
+              getAccountKeys?: () => { staticAccountKeys: SolPublicKey[] };
+            };
+            const keys: SolPublicKey[] =
+              msg.staticAccountKeys ??
+              msg.accountKeys ??
+              msg.getAccountKeys?.().staticAccountKeys ??
+              [];
+            const idx = keys.findIndex((k) => k.toBase58() === p.addresses.SOL);
+            if (idx === -1) continue;
+            const pre = meta.preBalances?.[idx] ?? 0;
+            const post = meta.postBalances?.[idx] ?? 0;
+            const delta = post - pre;
+            if (delta === 0) continue;
+            const direction: "in" | "out" = delta > 0 ? "in" : "out";
+            let counterparty = "unknown";
+            for (let i = 0; i < keys.length; i++) {
+              if (i === idx) continue;
+              const dPre = meta.preBalances?.[i] ?? 0;
+              const dPost = meta.postBalances?.[i] ?? 0;
+              const d = dPost - dPre;
+              if ((direction === "in" && d < 0) || (direction === "out" && d > 0)) {
+                counterparty = keys[i].toBase58();
+                break;
               }
-              out.push({
-                hash: s.signature,
-                chain: "SOL",
-                direction,
-                amount: `${(Math.abs(delta) / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
-                counterparty,
-                timestamp: (s.blockTime ?? 0) * 1000,
-              });
-            } catch { /* skip individual tx */ }
+            }
+            out.push({
+              hash: s.signature,
+              chain: "SOL",
+              direction,
+              amount: `${(Math.abs(delta) / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
+              counterparty,
+              timestamp: (s.blockTime ?? 0) * 1000,
+            });
           }
         } catch { /* network or rate limit */ }
 
