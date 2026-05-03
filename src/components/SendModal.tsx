@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IconClose, IconChevron, IconBack } from "./Icons";
 import { TokenIcon } from "./TokenIcon";
 import type { ChainSymbol } from "@/lib/wallet";
-import { decryptMnemonic, loadVault } from "@/lib/vault";
+import { decryptMnemonic, loadPublic, loadVault } from "@/lib/vault";
+import { validateAddress } from "@/lib/address-validate";
+import type { FeeEstimate } from "@/lib/fees";
 import { useToast } from "./Toast";
 
 const TOKENS: { sym: ChainSymbol; name: string; network: string }[] = [
@@ -88,8 +90,88 @@ function SendDetail({
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<"form" | "confirm" | "submitting" | "done">("form");
   const [result, setResult] = useState<{ hash?: string; err?: string } | null>(null);
+  const [addrErr, setAddrErr] = useState<string | null>(null);
+  const [addrChecking, setAddrChecking] = useState(false);
+  const [fee, setFee] = useState<FeeEstimate | null | "loading" | "failed">(null);
+  const [prices, setPrices] = useState<Record<string, number> | null>(null);
   const toast = useToast();
   const token = TOKENS.find((t) => t.sym === sym)!;
+
+  // Re-validate the recipient address (debounced) whenever it or the chain changes.
+  useEffect(() => {
+    const v = to.trim();
+    if (!v) {
+      setAddrErr(null);
+      setAddrChecking(false);
+      return;
+    }
+    let cancelled = false;
+    setAddrChecking(true);
+    const handle = setTimeout(async () => {
+      const res = await validateAddress(sym, v);
+      if (cancelled) return;
+      setAddrErr(res.ok ? null : res.reason);
+      setAddrChecking(false);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [to, sym]);
+
+  const amtNum = parseFloat(amount);
+  const amtValid = !!amount && !Number.isNaN(amtNum) && amtNum > 0;
+  const amtErr = amount && !amtValid ? "Enter a positive number." : amtValid && amtNum > available ? "Amount exceeds available balance." : null;
+  const canReview = !!to && !addrErr && !addrChecking && amtValid && !amtErr;
+
+  // When entering the confirm step, fetch fee estimate + USD prices in parallel.
+  useEffect(() => {
+    if (step !== "confirm") return;
+    let cancelled = false;
+    setFee("loading");
+    (async () => {
+      const pub = loadPublic();
+      const fromAddr =
+        sym === "BTC"
+          ? pub?.addresses.BTC
+          : sym === "ETH" || sym === "USDT" || sym === "USDC"
+          ? pub?.addresses.ETH
+          : sym === "SOL"
+          ? pub?.addresses.SOL
+          : pub?.addresses.DOT;
+      if (!fromAddr) {
+        if (!cancelled) setFee("failed");
+        return;
+      }
+      try {
+        const [{ estimateFee }, pricesRes] = await Promise.all([
+          import("@/lib/fees"),
+          fetch("/api/prices").then((r) => r.json()).catch(() => ({ prices: null })),
+        ]);
+        if (cancelled) return;
+        if (pricesRes?.prices) {
+          const flat: Record<string, number> = {};
+          for (const k of Object.keys(pricesRes.prices)) {
+            flat[k] = pricesRes.prices[k]?.usd ?? 0;
+          }
+          setPrices(flat);
+        }
+        const f = await estimateFee(sym, fromAddr, to.trim(), amount);
+        if (cancelled) return;
+        setFee(f ?? "failed");
+      } catch {
+        if (!cancelled) setFee("failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, sym, to, amount]);
+
+  const feeUsd =
+    fee && fee !== "loading" && fee !== "failed" && prices?.[fee.feeSym]
+      ? fee.native * prices[fee.feeSym]
+      : null;
 
   async function doSend() {
     setBusy(true);
@@ -160,7 +242,15 @@ function SendDetail({
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
                 placeholder={`${sym} address`}
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
               />
+              {addrErr && (
+                <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>
+                  {addrErr}
+                </p>
+              )}
             </div>
             <div>
               <div className="label mb-1.5">Amount</div>
@@ -171,15 +261,15 @@ function SendDetail({
                 placeholder="0.00"
                 inputMode="decimal"
               />
+              {amtErr && (
+                <p className="text-xs mt-1" style={{ color: "var(--danger)" }}>
+                  {amtErr}
+                </p>
+              )}
             </div>
-            {sym === "BTC" && (
-              <p className="text-xs" style={{ color: "var(--warning)" }}>
-                BTC sending is disabled in-app. Import your WIF into Electrum/Sparrow to send.
-              </p>
-            )}
             <button
               className="btn btn-primary"
-              disabled={!to || !amount || sym === "BTC"}
+              disabled={!canReview}
               onClick={() => setStep("confirm")}
             >
               Review <IconChevron size={16} />
@@ -193,6 +283,23 @@ function SendDetail({
               <Row k="Asset" v={sym} />
               <Row k="Amount" v={`${amount} ${sym}`} />
               <Row k="To" v={<span className="font-mono text-xs break-all">{to}</span>} />
+              <Row
+                k="Network fee"
+                v={
+                  fee === "loading" ? (
+                    <span className="muted inline-flex items-center gap-1.5"><span className="spinner" /> estimating…</span>
+                  ) : fee === "failed" || !fee ? (
+                    <span className="muted">unavailable</span>
+                  ) : (
+                    <span className="tabular-nums">
+                      ≈ {fee.native.toFixed(fee.feeSym === "ETH" ? 6 : 4)} {fee.feeSym}
+                      {feeUsd !== null && (
+                        <span className="muted"> (${feeUsd.toFixed(feeUsd < 0.01 ? 4 : 2)})</span>
+                      )}
+                    </span>
+                  )
+                }
+              />
             </div>
             <div>
               <div className="label mb-1.5">Password to sign</div>

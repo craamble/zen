@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL, sendAndConfirmTransaction } from "@solana/web3.js";
+import * as bitcoin from "bitcoinjs-lib";
 import { deriveEth, deriveSol, deriveDot } from "./wallet";
 import type { ChainSymbol } from "./wallet";
 
@@ -67,12 +68,147 @@ export async function sendDot(mnemonic: string, to: string, amount: string): Pro
   return hash.toHex();
 }
 
-export async function sendBtc(): Promise<string> {
-  // BTC sends need UTXO management + signing with tiny-secp256k1.
-  // To ship this safely, use a trusted wallet (e.g. Electrum, Sparrow) with the exported WIF.
-  throw new Error(
-    "BTC sending is disabled in-app. Import the private key (WIF) into Electrum/Sparrow for safety.",
-  );
+// ---- BTC (BIP84 native segwit / P2WPKH) sending ----
+
+const BTC_API = "https://mempool.space/api";
+
+type Utxo = {
+  txid: string;
+  vout: number;
+  value: number;
+  status: { confirmed: boolean };
+};
+
+async function fetchUtxos(address: string): Promise<Utxo[]> {
+  const r = await fetch(`${BTC_API}/address/${address}/utxo`, { cache: "no-store" });
+  if (!r.ok) throw new Error("utxo fetch failed");
+  return (await r.json()) as Utxo[];
+}
+
+async function fetchFeeRate(): Promise<number> {
+  // Returns sat/vB for "halfHourFee" (a sensible default).
+  try {
+    const r = await fetch(`${BTC_API}/v1/fees/recommended`, { cache: "no-store" });
+    if (r.ok) {
+      const d = (await r.json()) as { halfHourFee?: number; hourFee?: number; fastestFee?: number };
+      return d.halfHourFee ?? d.hourFee ?? d.fastestFee ?? 5;
+    }
+  } catch { /* fall through */ }
+  return 5;
+}
+
+const VBYTES_OVERHEAD = 11;
+const VBYTES_PER_INPUT = 68;
+const VBYTES_PER_OUTPUT = 31;
+const DUST_THRESHOLD = 294; // sats — minimum for a P2WPKH output
+
+export function estimateBtcVbytes(numInputs: number, numOutputs: number): number {
+  return VBYTES_OVERHEAD + VBYTES_PER_INPUT * numInputs + VBYTES_PER_OUTPUT * numOutputs;
+}
+
+/** Pure UTXO selector: greedy largest-first. Returns selected UTXOs, fee in sats, and change in sats (0 if no change output). */
+export function selectBtcUtxos(
+  utxos: Utxo[],
+  amountSats: number,
+  feeRate: number,
+): { selected: Utxo[]; feeSats: number; changeSats: number } | null {
+  const sorted = [...utxos].filter((u) => u.status.confirmed).sort((a, b) => b.value - a.value);
+  let total = 0;
+  const selected: Utxo[] = [];
+  for (const u of sorted) {
+    selected.push(u);
+    total += u.value;
+    // Try with change output first.
+    const vbytesWithChange = estimateBtcVbytes(selected.length, 2);
+    const feeWithChange = Math.ceil(vbytesWithChange * feeRate);
+    if (total >= amountSats + feeWithChange) {
+      const change = total - amountSats - feeWithChange;
+      if (change >= DUST_THRESHOLD) {
+        return { selected, feeSats: feeWithChange, changeSats: change };
+      }
+      // Change is dust — try one-output (no change) form.
+      const vbytesNoChange = estimateBtcVbytes(selected.length, 1);
+      const feeNoChange = Math.ceil(vbytesNoChange * feeRate);
+      if (total >= amountSats + feeNoChange) {
+        return { selected, feeSats: total - amountSats, changeSats: 0 };
+      }
+    }
+    // Also handle the no-change case for exact-amount sends.
+    const vbytesNoChange = estimateBtcVbytes(selected.length, 1);
+    const feeNoChange = Math.ceil(vbytesNoChange * feeRate);
+    if (total >= amountSats + feeNoChange && total - amountSats - feeNoChange < DUST_THRESHOLD) {
+      return { selected, feeSats: total - amountSats, changeSats: 0 };
+    }
+  }
+  return null;
+}
+
+export async function sendBtc(mnemonic: string, to: string, amount: string): Promise<string> {
+  const ecc = await import("tiny-secp256k1");
+  const bs58checkMod = (await import("bs58check")) as unknown as {
+    default?: { decode(s: string): Uint8Array };
+    decode?: (s: string) => Uint8Array;
+  };
+  const bs58check = bs58checkMod.default ?? bs58checkMod;
+  const { deriveBtc } = await import("./wallet");
+  const { Buffer } = await import("buffer");
+
+  const { address: fromAddr, wif } = await deriveBtc(mnemonic);
+
+  // Decode WIF → private key.
+  const decoded = bs58check.decode!(wif);
+  // Mainnet WIF: [0x80][32 priv][0x01 if compressed]
+  if (decoded[0] !== 0x80) throw new Error("bad wif");
+  const privKey = decoded.slice(1, 33);
+  const pubKey = ecc.pointFromScalar(privKey, true);
+  if (!pubKey) throw new Error("pubkey derive failed");
+
+  const network = bitcoin.networks.bitcoin;
+  const fromScript = bitcoin.address.toOutputScript(fromAddr, network);
+
+  const amtFloat = parseFloat(amount);
+  if (!Number.isFinite(amtFloat) || amtFloat <= 0) throw new Error("bad amount");
+  const amountSats = Math.round(amtFloat * 1e8);
+
+  const [utxos, feeRate] = await Promise.all([fetchUtxos(fromAddr), fetchFeeRate()]);
+  const selection = selectBtcUtxos(utxos, amountSats, feeRate);
+  if (!selection) throw new Error("insufficient funds");
+
+  const psbt = new bitcoin.Psbt({ network });
+  for (const u of selection.selected) {
+    psbt.addInput({
+      hash: u.txid,
+      index: u.vout,
+      witnessUtxo: { script: fromScript, value: BigInt(u.value) },
+    });
+  }
+  psbt.addOutput({ address: to, value: BigInt(amountSats) });
+  if (selection.changeSats > 0) {
+    psbt.addOutput({ address: fromAddr, value: BigInt(selection.changeSats) });
+  }
+
+  const signer = {
+    publicKey: Buffer.from(pubKey),
+    sign: (hash: Buffer) => Buffer.from(ecc.sign(hash, privKey)),
+  };
+  for (let i = 0; i < selection.selected.length; i++) {
+    psbt.signInput(i, signer);
+  }
+  psbt.finalizeAllInputs();
+  const tx = psbt.extractTransaction();
+  const hex = tx.toHex();
+
+  const r = await fetch(`${BTC_API}/tx`, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: hex,
+  });
+  if (!r.ok) {
+    const msg = await r.text().catch(() => "broadcast failed");
+    throw new Error(msg || "broadcast failed");
+  }
+  const txid = (await r.text()).trim();
+  return txid;
 }
 
 export async function send(
@@ -92,6 +228,6 @@ export async function send(
     case "DOT":
       return sendDot(mnemonic, to, amount);
     case "BTC":
-      return sendBtc();
+      return sendBtc(mnemonic, to, amount);
   }
 }

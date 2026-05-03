@@ -40,6 +40,22 @@ type CustomToken = {
 type ExtraPrice = { usd: number; change24h: number };
 
 const HIDE_BALANCES_KEY = "zenwallet.hideBalances.v1";
+const BALANCES_CACHE_KEY = "zenwallet.balances.v1";
+const PRICES_CACHE_KEY = "zenwallet.prices.v1";
+
+function readCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+function writeCache(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch { /* quota or private mode */ }
+}
 
 export default function Portfolio() {
   const [pub, setPub] = useState<PublicState | null>(null);
@@ -60,7 +76,15 @@ export default function Portfolio() {
     const tasks: Promise<unknown>[] = [];
 
     tasks.push(
-      fetch("/api/prices").then((r) => r.json()).then((d) => setPrices(d.prices)).catch(() => {}),
+      fetch("/api/prices")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.prices) {
+            setPrices(d.prices);
+            writeCache(PRICES_CACHE_KEY, d.prices);
+          }
+        })
+        .catch(() => {}),
     );
 
     if (p.accountId) {
@@ -99,8 +123,11 @@ export default function Portfolio() {
     tasks.push(
       import("@/lib/balances").then(({ getAllBalances }) =>
         getAllBalances(p.addresses)
-          .then(setBalances)
-          .catch(() => setBalances({ DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 }))
+          .then((b) => {
+            setBalances(b);
+            writeCache(BALANCES_CACHE_KEY, b);
+          })
+          .catch(() => setBalances((prev) => prev ?? { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 }))
           .finally(() => setLoadingBal(false)),
       ),
     );
@@ -112,6 +139,14 @@ export default function Portfolio() {
     const p = loadPublic();
     setPub(p);
     setHidden(localStorage.getItem(HIDE_BALANCES_KEY) === "1");
+    // Paint cached balances/prices instantly so the page isn't all zeros while RPCs run.
+    const cachedBal = readCache<Record<ChainSymbol, number>>(BALANCES_CACHE_KEY);
+    if (cachedBal) {
+      setBalances(cachedBal);
+      setLoadingBal(false);
+    }
+    const cachedPrices = readCache<PriceMap>(PRICES_CACHE_KEY);
+    if (cachedPrices) setPrices(cachedPrices);
     if (p) refresh(p);
   }, []);
 

@@ -87,6 +87,53 @@ export default function History() {
           }
         } catch { /* network */ }
 
+        // SOL: best-effort via the public mainnet-beta RPC.
+        // getSignaturesForAddress is keyless but rate-limited; we fetch up to 10 recent signatures
+        // and inspect each tx's pre/post balances to determine direction + amount.
+        try {
+          const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+          const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+          const pk = new PublicKey(p.addresses.SOL);
+          const sigs = await conn.getSignaturesForAddress(pk, { limit: 10 });
+          for (const s of sigs) {
+            try {
+              const tx = await conn.getTransaction(s.signature, {
+                maxSupportedTransactionVersion: 0,
+              });
+              if (!tx?.meta || !tx.transaction) continue;
+              const keys = tx.transaction.message.staticAccountKeys ??
+                tx.transaction.message.getAccountKeys?.().staticAccountKeys ?? [];
+              const idx = keys.findIndex((k) => k.toBase58() === p.addresses.SOL);
+              if (idx === -1) continue;
+              const pre = tx.meta.preBalances?.[idx] ?? 0;
+              const post = tx.meta.postBalances?.[idx] ?? 0;
+              const delta = post - pre;
+              if (delta === 0) continue;
+              const direction: "in" | "out" = delta > 0 ? "in" : "out";
+              // Counterparty heuristic: pick the other key whose balance changed in the opposite sign.
+              let counterparty = "unknown";
+              for (let i = 0; i < keys.length; i++) {
+                if (i === idx) continue;
+                const dPre = tx.meta.preBalances?.[i] ?? 0;
+                const dPost = tx.meta.postBalances?.[i] ?? 0;
+                const d = dPost - dPre;
+                if ((direction === "in" && d < 0) || (direction === "out" && d > 0)) {
+                  counterparty = keys[i].toBase58();
+                  break;
+                }
+              }
+              out.push({
+                hash: s.signature,
+                chain: "SOL",
+                direction,
+                amount: `${(Math.abs(delta) / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
+                counterparty,
+                timestamp: (s.blockTime ?? 0) * 1000,
+              });
+            } catch { /* skip individual tx */ }
+          }
+        } catch { /* network or rate limit */ }
+
         // Custom token history: each row contributes an "in" tx at created_at and (if deleted) an "out" tx at deleted_at.
         if (p.accountId) {
           try {
@@ -140,8 +187,8 @@ export default function History() {
         )}
         {items && items.length === 0 && (
           <div className="p-10 text-center muted">
-            No transactions yet. Showing recent BTC activity; EVM/Solana/Polkadot history requires an
-            explorer API key (configure in settings).
+            No transactions yet. Showing recent BTC and Solana activity; ETH/USDT/USDC and DOT
+            history require an explorer API key (not configured).
           </div>
         )}
         {items && items.length > 0 && (

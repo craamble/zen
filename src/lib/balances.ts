@@ -2,6 +2,23 @@ import { ethers } from "ethers";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import type { ChainSymbol } from "./wallet";
 
+/** Retry an async function up to `attempts` times with exponential back-off + jitter. */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 250): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        const wait = baseMs * Math.pow(2, i) + Math.random() * 100;
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 const ETH_RPC = "https://cloudflare-eth.com";
 const SOL_RPC = "https://api.mainnet-beta.solana.com";
 const DOT_WS = "wss://rpc.polkadot.io";
@@ -14,47 +31,55 @@ const ERC20_ABI = ["function balanceOf(address) view returns (uint256)", "functi
 export type Balances = Record<ChainSymbol, number>;
 
 export async function getEthBalance(address: string): Promise<number> {
-  const provider = new ethers.JsonRpcProvider(ETH_RPC);
-  const wei = await provider.getBalance(address);
-  return Number(ethers.formatEther(wei));
+  return withRetry(async () => {
+    const provider = new ethers.JsonRpcProvider(ETH_RPC);
+    const wei = await provider.getBalance(address);
+    return Number(ethers.formatEther(wei));
+  });
 }
 
 async function getErc20Balance(address: string, contract: string, decimals: number): Promise<number> {
-  const provider = new ethers.JsonRpcProvider(ETH_RPC);
-  const c = new ethers.Contract(contract, ERC20_ABI, provider);
-  const raw: bigint = await c.balanceOf(address);
-  return Number(raw) / 10 ** decimals;
+  return withRetry(async () => {
+    const provider = new ethers.JsonRpcProvider(ETH_RPC);
+    const c = new ethers.Contract(contract, ERC20_ABI, provider);
+    const raw: bigint = await c.balanceOf(address);
+    return Number(raw) / 10 ** decimals;
+  });
 }
 
 export async function getBtcBalance(address: string): Promise<number> {
-  const r = await fetch(`${BTC_API}/address/${address}`, { cache: "no-store" });
-  if (!r.ok) return 0;
-  const d = await r.json();
-  const sats =
-    (d.chain_stats?.funded_txo_sum ?? 0) - (d.chain_stats?.spent_txo_sum ?? 0);
-  return sats / 1e8;
+  return withRetry(async () => {
+    const r = await fetch(`${BTC_API}/address/${address}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`btc ${r.status}`);
+    const d = await r.json();
+    const sats = (d.chain_stats?.funded_txo_sum ?? 0) - (d.chain_stats?.spent_txo_sum ?? 0);
+    return sats / 1e8;
+  });
 }
 
 export async function getSolBalance(address: string): Promise<number> {
-  const conn = new Connection(SOL_RPC, "confirmed");
-  const lamports = await conn.getBalance(new PublicKey(address));
-  return lamports / LAMPORTS_PER_SOL;
+  return withRetry(async () => {
+    const conn = new Connection(SOL_RPC, "confirmed");
+    const lamports = await conn.getBalance(new PublicKey(address));
+    return lamports / LAMPORTS_PER_SOL;
+  });
 }
 
 export async function getDotBalance(address: string): Promise<number> {
-  try {
+  return withRetry(async () => {
     const { ApiPromise, WsProvider } = await import("@polkadot/api");
     const provider = new WsProvider(DOT_WS);
     const api = await ApiPromise.create({ provider });
-    const acct = (await api.query.system.account(address)) as unknown as {
-      data: { free: { toString(): string } };
-    };
-    const free = BigInt(acct.data.free.toString());
-    await api.disconnect();
-    return Number(free) / 1e10;
-  } catch {
-    return 0;
-  }
+    try {
+      const acct = (await api.query.system.account(address)) as unknown as {
+        data: { free: { toString(): string } };
+      };
+      const free = BigInt(acct.data.free.toString());
+      return Number(free) / 1e10;
+    } finally {
+      await api.disconnect();
+    }
+  });
 }
 
 export async function getAllBalances(addrs: {
