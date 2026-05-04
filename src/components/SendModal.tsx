@@ -17,6 +17,9 @@ const TOKENS: { sym: ChainSymbol; name: string; network: string }[] = [
   { sym: "USDC", name: "USD Coin", network: "Ethereum (ERC-20)" },
 ];
 
+const HIDE_BALANCES_KEY = "zenwallet.hideBalances.v1";
+const MASK = "••••••";
+
 export function SendModal({
   balances,
   onClose,
@@ -25,6 +28,13 @@ export function SendModal({
   onClose: () => void;
 }) {
   const [selected, setSelected] = useState<ChainSymbol | null>(null);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    try {
+      setHidden(localStorage.getItem(HIDE_BALANCES_KEY) === "1");
+    } catch { /* ignore */ }
+  }, []);
 
   return (
     <>
@@ -52,7 +62,7 @@ export function SendModal({
                 </div>
                 <div className="text-right">
                   <div className="text-sm tabular-nums">
-                    {(balances[t.sym] ?? 0).toFixed(t.sym === "BTC" ? 6 : 4)}
+                    {hidden ? MASK : (balances[t.sym] ?? 0).toFixed(t.sym === "BTC" ? 6 : 4)}
                   </div>
                   <div className="muted text-xs">{t.sym}</div>
                 </div>
@@ -65,6 +75,7 @@ export function SendModal({
         <SendDetail
           sym={selected}
           available={balances[selected] ?? 0}
+          hidden={hidden}
           onBack={() => setSelected(null)}
           onClose={onClose}
         />
@@ -76,11 +87,13 @@ export function SendModal({
 function SendDetail({
   sym,
   available,
+  hidden,
   onBack,
   onClose,
 }: {
   sym: ChainSymbol;
   available: number;
+  hidden: boolean;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -173,6 +186,14 @@ function SendDetail({
       ? fee.native * prices[fee.feeSym]
       : null;
 
+  // Warn if amount + network fee can't fit in the available balance.
+  // Only meaningful when the fee asset == the send asset (native sends, not ERC-20s
+  // where amount is in USDT/USDC and fee is in ETH).
+  const insufficientForFee =
+    fee && fee !== "loading" && fee !== "failed" && fee.feeSym === sym && amtValid
+      ? amtNum + fee.native > available
+      : false;
+
   async function doSend() {
     setBusy(true);
     setResult(null);
@@ -229,7 +250,9 @@ function SendDetail({
           </div>
           <div className="text-right">
             <div className="label">Available</div>
-            <div className="text-sm tabular-nums mt-0.5">{available.toFixed(6)} {sym}</div>
+            <div className="text-sm tabular-nums mt-0.5">
+              {hidden ? MASK : `${available.toFixed(6)} ${sym}`}
+            </div>
           </div>
         </div>
 
@@ -300,7 +323,23 @@ function SendDetail({
                   )
                 }
               />
+              {/* Total row only for native sends where amount + fee share a unit. */}
+              {fee && fee !== "loading" && fee !== "failed" && fee.feeSym === sym && (
+                <Row
+                  k="Total"
+                  v={
+                    <span className="tabular-nums">
+                      {(amtNum + fee.native).toFixed(fee.feeSym === "ETH" ? 6 : 4)} {sym}
+                    </span>
+                  }
+                />
+              )}
             </div>
+            {insufficientForFee && (
+              <p className="text-xs" style={{ color: "var(--warning)" }}>
+                Heads up: amount + network fee exceeds your available balance. The transaction may fail.
+              </p>
+            )}
             <div>
               <div className="label mb-1.5">Password to sign</div>
               <input

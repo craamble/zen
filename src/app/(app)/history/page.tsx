@@ -200,9 +200,8 @@ export default function History() {
           </div>
         )}
         {items && items.length === 0 && (
-          <div className="p-10 text-center muted">
-            No transactions yet. Showing recent BTC and Solana activity; ETH/USDT/USDC and DOT
-            history require an explorer API key (not configured).
+          <div className="p-10 text-center muted text-sm">
+            No transactions yet.
           </div>
         )}
         {items && items.length > 0 && (

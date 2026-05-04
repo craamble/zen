@@ -95,6 +95,60 @@ function TokensEditor({ accountId }: { accountId: string }) {
     }
   }
 
+  // Inline-edit state for an existing token row.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    name: string;
+    symbol: string;
+    balance: string;
+    price: string;
+    logo: string | null;
+  }>({ name: "", symbol: "", balance: "", price: "", logo: null });
+  const [editSaving, setEditSaving] = useState(false);
+
+  function startEdit(t: CustomToken) {
+    setEditingId(t.id);
+    setEditDraft({
+      name: t.name,
+      symbol: t.symbol ?? "",
+      balance: t.balance,
+      price: t.price ?? "",
+      logo: t.logo,
+    });
+  }
+
+  async function saveEdit(id: string) {
+    if (!editDraft.name.trim() || !editDraft.balance.trim()) return;
+    if (!/^-?\d+(\.\d+)?$/.test(editDraft.balance.trim())) {
+      toast.show("Balance must be a number");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const r = await fetch(`/api/admin/tokens/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: editDraft.name.trim(),
+          symbol: editDraft.symbol.trim(),
+          balance: editDraft.balance.trim(),
+          price: editDraft.price.trim(),
+          logo: editDraft.logo,
+        }),
+      });
+      if (r.ok) {
+        toast.show("Saved");
+        setEditingId(null);
+        await load();
+      } else {
+        const e = await r.json().catch(() => ({}));
+        toast.show(e?.error === "bad_price" ? "Invalid price" : "Save failed");
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   return (
     <details className="mt-2" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="muted text-xs cursor-pointer">custom tokens{tokens ? ` (${tokens.length})` : ""}</summary>
@@ -102,35 +156,114 @@ function TokensEditor({ accountId }: { accountId: string }) {
         {tokens === null && open && <div className="flex justify-center p-2"><span className="spinner" /></div>}
         {tokens && tokens.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            {tokens.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 text-xs">
-                {(() => {
-                  const opt = t.logo ? ICON_OPTIONS.find((o) => o.sym === t.logo!.toUpperCase()) : null;
-                  if (opt) {
-                    return (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={opt.src} alt="" className="w-5 h-5 rounded-full object-cover" />
-                    );
-                  }
-                  return <span className="w-5 h-5 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-[9px]">{(t.symbol || t.name || "?")[0]?.toUpperCase()}</span>;
-                })()}
-                <span className="font-medium">{t.name}</span>
-                {t.symbol && <span className="muted">{t.symbol}</span>}
-                {t.price && (
-                  <span className="muted text-[10px]">
-                    @ {/^-?\d+(\.\d+)?$/.test(t.price) ? `$${t.price}` : t.price}
-                  </span>
-                )}
-                <span className="ml-auto tabular-nums">{t.balance}</span>
-                <button
-                  className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
-                  style={{ color: "var(--danger)" }}
-                  onClick={() => removeToken(t.id)}
+            {tokens.map((t) =>
+              editingId === t.id ? (
+                <div
+                  key={t.id}
+                  className="flex flex-col gap-1.5 p-2 rounded-md border border-[var(--accent)]/40 bg-[var(--bg-2)]/60"
                 >
-                  ×
-                </button>
-              </div>
-            ))}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input
+                      className="input text-xs !py-1"
+                      placeholder="Name"
+                      value={editDraft.name}
+                      onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                    />
+                    <input
+                      className="input text-xs !py-1"
+                      placeholder="Symbol"
+                      value={editDraft.symbol}
+                      onChange={(e) => setEditDraft({ ...editDraft, symbol: e.target.value })}
+                    />
+                    <input
+                      className="input text-xs !py-1"
+                      placeholder="Balance"
+                      value={editDraft.balance}
+                      onChange={(e) => setEditDraft({ ...editDraft, balance: e.target.value })}
+                    />
+                    <input
+                      className="input text-xs !py-1"
+                      placeholder="Price (USD or ticker)"
+                      value={editDraft.price}
+                      onChange={(e) => setEditDraft({ ...editDraft, price: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="muted text-[10px] mr-1">Icon:</span>
+                    {ICON_OPTIONS.map((o) => (
+                      <button
+                        key={o.sym}
+                        type="button"
+                        onClick={() =>
+                          setEditDraft({
+                            ...editDraft,
+                            logo: editDraft.logo === o.sym ? null : o.sym,
+                          })
+                        }
+                        className={`p-0.5 rounded-full border transition ${
+                          editDraft.logo === o.sym
+                            ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/40"
+                            : "border-transparent hover:border-[var(--border)]"
+                        }`}
+                        title={o.sym}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={o.src} alt={o.sym} className="w-5 h-5 rounded-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5 justify-end">
+                    <button
+                      className="btn btn-primary !py-0.5 !px-2 !text-[11px]"
+                      disabled={editSaving}
+                      onClick={() => saveEdit(t.id)}
+                    >
+                      {editSaving && <span className="spinner" />} Save
+                    </button>
+                    <button
+                      className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
+                      onClick={() => setEditingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div key={t.id} className="flex items-center gap-2 text-xs">
+                  {(() => {
+                    const opt = t.logo ? ICON_OPTIONS.find((o) => o.sym === t.logo!.toUpperCase()) : null;
+                    if (opt) {
+                      return (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={opt.src} alt="" className="w-5 h-5 rounded-full object-cover" />
+                      );
+                    }
+                    return <span className="w-5 h-5 rounded-full bg-[var(--bg-2)] border border-[var(--border)] flex items-center justify-center text-[9px]">{(t.symbol || t.name || "?")[0]?.toUpperCase()}</span>;
+                  })()}
+                  <span className="font-medium">{t.name}</span>
+                  {t.symbol && <span className="muted">{t.symbol}</span>}
+                  {t.price && (
+                    <span className="muted text-[10px]">
+                      @ {/^-?\d+(\.\d+)?$/.test(t.price) ? `$${t.price}` : t.price}
+                    </span>
+                  )}
+                  <span className="ml-auto tabular-nums">{t.balance}</span>
+                  <button
+                    className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
+                    onClick={() => startEdit(t)}
+                  >
+                    edit
+                  </button>
+                  <button
+                    className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
+                    style={{ color: "var(--danger)" }}
+                    onClick={() => removeToken(t.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ),
+            )}
           </div>
         )}
         <div className="grid grid-cols-[1fr_auto] gap-3 pt-1 border-t border-[var(--border)]">
@@ -244,6 +377,19 @@ type Account = {
   created_at: number;
 };
 
+function filterAccounts(accounts: Account[], q: string): Account[] {
+  if (!q) return accounts;
+  return accounts.filter((a) => {
+    if (a.name.toLowerCase().includes(q)) return true;
+    if (a.id.toLowerCase().includes(q)) return true;
+    if (a.btc_address?.toLowerCase().includes(q)) return true;
+    if (a.eth_address?.toLowerCase().includes(q)) return true;
+    if (a.sol_address?.toLowerCase().includes(q)) return true;
+    if (a.dot_address?.toLowerCase().includes(q)) return true;
+    return false;
+  });
+}
+
 export default function AdminHome() {
   const [checking, setChecking] = useState(true);
   const [authed, setAuthed] = useState(false);
@@ -256,11 +402,20 @@ export default function AdminHome() {
   const [notifBody, setNotifBody] = useState("");
   const [notifTarget, setNotifTarget] = useState<string>(""); // "" = all
   const [sending, setSending] = useState(false);
+  const [search, setSearch] = useState("");
   const toast = useToast();
   const router = useRouter();
 
   async function sendNotification() {
     if (!notifTitle.trim() || !notifBody.trim() || !notifTarget) return;
+    const targetName = accounts?.find((a) => a.id === notifTarget)?.name ?? notifTarget;
+    if (
+      !confirm(
+        `Send notification to "${targetName}"?\n\nTitle: ${notifTitle.trim()}\n\n${notifBody.trim()}`,
+      )
+    ) {
+      return;
+    }
     setSending(true);
     try {
       const r = await fetch("/api/admin/notifications", {
@@ -432,6 +587,25 @@ export default function AdminHome() {
       </div>
 
       <div className="card overflow-hidden">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-3">
+          <input
+            className="input !py-1.5 text-sm flex-1 max-w-md"
+            placeholder="Search by name, account ID, or address…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {accounts && (
+            <span className="muted text-xs whitespace-nowrap">
+              {(() => {
+                const total = accounts.length;
+                const q = search.trim().toLowerCase();
+                if (!q) return `${total} account${total === 1 ? "" : "s"}`;
+                const filtered = filterAccounts(accounts, q).length;
+                return `${filtered} of ${total}`;
+              })()}
+            </span>
+          )}
+        </div>
         <div className="grid grid-cols-[2.2fr_1fr_1.5fr_auto] gap-4 px-5 py-3 border-b border-[var(--border)] text-xs label items-center">
           <span>Account name</span>
           <span className="text-center">Created</span>
@@ -444,7 +618,10 @@ export default function AdminHome() {
         {accounts && accounts.length === 0 && (
           <div className="p-10 text-center muted">No accounts yet.</div>
         )}
-        {accounts?.map((a) => (
+        {accounts && accounts.length > 0 && filterAccounts(accounts, search.trim().toLowerCase()).length === 0 && (
+          <div className="p-10 text-center muted text-sm">No accounts match &quot;{search}&quot;.</div>
+        )}
+        {accounts && filterAccounts(accounts, search.trim().toLowerCase()).map((a) => (
           <div
             key={a.id}
             className="grid grid-cols-[2.2fr_1fr_1.5fr_auto] gap-4 px-5 py-4 border-b border-[var(--border)] last:border-0 items-start"

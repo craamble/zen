@@ -291,7 +291,11 @@ export default function Portfolio() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Tokens</h2>
-          {loadingBal && <span className="chip"><span className="spinner" /> loading balances</span>}
+          {loadingBal && balances && (
+            <span className="muted text-xs inline-flex items-center gap-1.5">
+              <span className="spinner" /> refreshing
+            </span>
+          )}
         </div>
         <div className="glass-card overflow-hidden">
           <div className="hidden sm:grid grid-cols-[1.5fr_1fr_1fr_1fr] px-6 py-3 border-b border-[var(--border)] text-xs label">
@@ -319,19 +323,34 @@ export default function Portfolio() {
                 {((r as any).pct as number).toFixed(1)}%
               </div>
               <div className="hidden sm:block tabular-nums">
-                <div>${r.price.toFixed(r.price < 1 ? 4 : 2)}</div>
-                {r.change !== 0 && (
-                  <div
-                    className="text-xs"
-                    style={{ color: r.change >= 0 ? "var(--success)" : "var(--danger)" }}
-                  >
-                    {r.change >= 0 ? "+" : ""}{r.change.toFixed(2)}%
-                  </div>
+                {prices ? (
+                  <>
+                    <div>${r.price.toFixed(r.price < 1 ? 4 : 2)}</div>
+                    {r.change !== 0 && (
+                      <div
+                        className="text-xs"
+                        style={{ color: r.change >= 0 ? "var(--success)" : "var(--danger)" }}
+                      >
+                        {r.change >= 0 ? "+" : ""}{r.change.toFixed(2)}%
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="skel" style={{ width: 60, height: 14 }} />
                 )}
               </div>
               <div className="text-right tabular-nums">
-                <div>{hidden ? mask : `${r.bal.toFixed(r.sym === "BTC" ? 8 : 4)} ${r.sym}`}</div>
-                <div className="muted text-xs">{hidden ? mask : `$${r.value.toFixed(2)}`}</div>
+                {balances ? (
+                  <>
+                    <div>{hidden ? mask : `${r.bal.toFixed(r.sym === "BTC" ? 8 : 4)} ${r.sym}`}</div>
+                    <div className="muted text-xs">{hidden ? mask : `$${r.value.toFixed(2)}`}</div>
+                  </>
+                ) : (
+                  <>
+                    <div><span className="skel" style={{ width: 90, height: 14 }} /></div>
+                    <div className="mt-1"><span className="skel" style={{ width: 50, height: 11 }} /></div>
+                  </>
+                )}
               </div>
             </div>
           ))}

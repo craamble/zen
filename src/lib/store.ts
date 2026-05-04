@@ -227,6 +227,36 @@ export async function insertCustomToken(row: CustomTokenRow): Promise<void> {
     .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.price, row.deleted_at, row.created_at);
 }
 
+export async function patchCustomToken(
+  id: string,
+  patch: Partial<Pick<CustomTokenRow, "name" | "symbol" | "balance" | "logo" | "price">>,
+): Promise<boolean> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_tokens")
+      .update(patch)
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
+  }
+  const { db } = await import("./db");
+  const fields: string[] = [];
+  const values: (string | null)[] = [];
+  for (const key of ["name", "symbol", "balance", "logo", "price"] as const) {
+    if (key in patch) {
+      fields.push(`${key} = ?`);
+      values.push((patch[key] ?? null) as string | null);
+    }
+  }
+  if (!fields.length) return false;
+  values.push(id);
+  const info = db()
+    .prepare(`UPDATE custom_tokens SET ${fields.join(", ")} WHERE id = ?`)
+    .run(...values);
+  return info.changes > 0;
+}
+
 export async function deleteCustomToken(id: string): Promise<void> {
   const ts = Date.now();
   if (useSupabase) {
