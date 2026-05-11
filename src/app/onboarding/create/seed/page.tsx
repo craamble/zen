@@ -14,13 +14,17 @@ export default function CreateSeed() {
   const toast = useToast();
 
   useEffect(() => {
+    // Generate or recover the pending mnemonic on mount.
     const existing = sessionStorage.getItem("zenwallet.pending.mnemonic");
-    if (existing) setMnemonic(existing);
-    else {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (existing) {
+      setMnemonic(existing);
+    } else {
       const m = newMnemonic();
       setMnemonic(m);
       sessionStorage.setItem("zenwallet.pending.mnemonic", m);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const words = mnemonic.split(" ");

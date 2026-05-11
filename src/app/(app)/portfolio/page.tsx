@@ -136,7 +136,10 @@ export default function Portfolio() {
   }
 
   useEffect(() => {
+    // Mount-time hydration from localStorage + initial refresh. setState here is
+    // intentional — these values live in browser storage, not React state.
     const p = loadPublic();
+    /* eslint-disable react-hooks/set-state-in-effect */
     setPub(p);
     setHidden(localStorage.getItem(HIDE_BALANCES_KEY) === "1");
     // Paint cached balances/prices instantly so the page isn't all zeros while RPCs run.
@@ -147,6 +150,7 @@ export default function Portfolio() {
     }
     const cachedPrices = readCache<PriceMap>(PRICES_CACHE_KEY);
     if (cachedPrices) setPrices(cachedPrices);
+    /* eslint-enable react-hooks/set-state-in-effect */
     if (p) refresh(p);
   }, []);
 
@@ -173,7 +177,27 @@ export default function Portfolio() {
     }
   }
 
-  const onChainRows = SYMBOLS.map((s) => {
+  type OnChainRow = {
+    sym: ChainSymbol;
+    price: number;
+    bal: number;
+    onChainBal: number;
+    value: number;
+    onChainValue: number;
+    customValue: number;
+    change: number;
+    pct: number;
+  };
+  type StandaloneRow = {
+    token: CustomToken;
+    bal: number;
+    price: number;
+    change: number;
+    value: number;
+    pct: number;
+  };
+
+  const onChainRowsRaw = SYMBOLS.map<Omit<OnChainRow, "pct">>((s) => {
     const price = prices?.[s]?.usd ?? 0;
     const onChainBal = balances?.[s] ?? 0;
     const mergedBal = onChainBal + customAdds[s];
@@ -190,20 +214,26 @@ export default function Portfolio() {
     const p = extraPrices[t.price];
     return { price: p?.usd ?? 0, change: p?.change24h ?? 0 };
   }
-  const standaloneRows = standalone.map((t) => {
+  const standaloneRowsRaw = standalone.map<Omit<StandaloneRow, "pct">>((t) => {
     const bal = parseFloat(t.balance) || 0;
     const { price, change } = resolveCustom(t);
     return { token: t, bal, price, change, value: price * bal };
   });
 
-  const onChainTotal = onChainRows.reduce((a, r) => a + r.onChainValue, 0);
+  const onChainTotal = onChainRowsRaw.reduce((a, r) => a + r.onChainValue, 0);
   const customTotal =
-    onChainRows.reduce((a, r) => a + r.customValue, 0) +
-    standaloneRows.reduce((a, r) => a + r.value, 0);
+    onChainRowsRaw.reduce((a, r) => a + r.customValue, 0) +
+    standaloneRowsRaw.reduce((a, r) => a + r.value, 0);
   const totalValue = onChainTotal + customTotal;
 
-  onChainRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
-  standaloneRows.forEach((r) => ((r as any).pct = totalValue > 0 ? (r.value / totalValue) * 100 : 0));
+  const onChainRows: OnChainRow[] = onChainRowsRaw.map((r) => ({
+    ...r,
+    pct: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
+  }));
+  const standaloneRows: StandaloneRow[] = standaloneRowsRaw.map((r) => ({
+    ...r,
+    pct: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
+  }));
 
   const sendBalances: Record<ChainSymbol, number> = {
     DOT: onChainRows.find((r) => r.sym === "DOT")!.bal,
@@ -320,7 +350,7 @@ export default function Portfolio() {
                 </div>
               </div>
               <div className="hidden sm:block tabular-nums">
-                {((r as any).pct as number).toFixed(1)}%
+                {r.pct.toFixed(1)}%
               </div>
               <div className="hidden sm:block tabular-nums">
                 {prices ? (
@@ -372,7 +402,7 @@ export default function Portfolio() {
                   </div>
                 </div>
                 <div className="hidden sm:block tabular-nums">
-                  {((r as any).pct as number).toFixed(1)}%
+                  {r.pct.toFixed(1)}%
                 </div>
                 <div className="hidden sm:block tabular-nums">
                   {r.price > 0 ? (

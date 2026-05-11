@@ -2,12 +2,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AUTOLOCK_OPTIONS,
   clearVault,
   decryptMnemonic,
   encryptMnemonic,
+  loadAutoLockMinutes,
   loadPublic,
   loadVault,
   savePublic,
+  saveAutoLockMinutes,
   saveVault,
   type PublicState,
 } from "@/lib/vault";
@@ -23,6 +26,9 @@ export default function Settings() {
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
 
+  // Auto-lock
+  const [autoLock, setAutoLock] = useState<number>(15);
+
   // Password change
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -30,7 +36,19 @@ export default function Settings() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwErr, setPwErr] = useState<string | null>(null);
 
-  useEffect(() => setPub(loadPublic()), []);
+  useEffect(() => {
+    // Hydrate from localStorage on mount.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setPub(loadPublic());
+    setAutoLock(loadAutoLockMinutes());
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  function onChangeAutoLock(minutes: number) {
+    setAutoLock(minutes);
+    saveAutoLockMinutes(minutes);
+    toast.show(minutes === 0 ? "Auto-lock disabled" : `Auto-lock set to ${minutes} min`);
+  }
 
   function startEditName() {
     setNameDraft(pub?.accountName ?? "");
@@ -202,6 +220,28 @@ export default function Settings() {
           >
             {pwBusy && <span className="spinner" />} Change password
           </button>
+        </div>
+      </div>
+
+      <div className="glass-card p-6 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="font-semibold">Auto-lock</h2>
+            <p className="muted text-sm mt-1">
+              Automatically lock the wallet after a period of inactivity.
+            </p>
+          </div>
+          <select
+            className="input !py-1.5 !px-3 text-sm !w-auto"
+            value={autoLock}
+            onChange={(e) => onChangeAutoLock(parseInt(e.target.value, 10))}
+          >
+            {AUTOLOCK_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

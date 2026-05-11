@@ -31,7 +31,9 @@ export function SendModal({
   const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
+    // Hydrate the hide-balances preference from localStorage on mount.
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHidden(localStorage.getItem(HIDE_BALANCES_KEY) === "1");
     } catch { /* ignore */ }
   }, []);
@@ -114,6 +116,7 @@ function SendDetail({
   useEffect(() => {
     const v = to.trim();
     if (!v) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAddrErr(null);
       setAddrChecking(false);
       return;
@@ -141,6 +144,7 @@ function SendDetail({
   useEffect(() => {
     if (step !== "confirm") return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFee("loading");
     (async () => {
       const pub = loadPublic();

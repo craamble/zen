@@ -1,10 +1,16 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "./Logo";
 import { IconLock, IconWallet, IconClock, IconGear, IconHelp } from "./Icons";
-import { clearSession, loadPublic, loadVault, type PublicState } from "@/lib/vault";
+import {
+  clearSession,
+  loadAutoLockMinutes,
+  loadPublic,
+  loadVault,
+  type PublicState,
+} from "@/lib/vault";
 import { ToastProvider } from "./Toast";
 import { NotificationsBell } from "./NotificationsBell";
 
@@ -12,14 +18,72 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [pub, setPub] = useState<PublicState | null>(null);
+  const lockTimerRef = useRef<number | null>(null);
+  const lastActivityRef = useRef<number>(0);
 
   useEffect(() => {
+    lastActivityRef.current = Date.now();
     if (!loadVault()) {
       router.replace("/onboarding");
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPub(loadPublic());
   }, [router]);
+
+  // Auto-lock on inactivity. Listens for any user activity and resets a timer
+  // that, when it fires, clears the session mnemonic and routes to /unlock.
+  useEffect(() => {
+    if (!pub) return; // not authed yet
+    const minutes = loadAutoLockMinutes();
+    if (minutes <= 0) return; // "Never" — feature disabled
+
+    const idleMs = minutes * 60 * 1000;
+
+    function lockNow() {
+      clearSession();
+      router.replace("/unlock");
+    }
+    function arm() {
+      if (lockTimerRef.current !== null) window.clearTimeout(lockTimerRef.current);
+      lockTimerRef.current = window.setTimeout(lockNow, idleMs);
+    }
+    function onActivity() {
+      const now = Date.now();
+      // Throttle: only restart the timer once per second to avoid thrash on mousemove.
+      if (now - lastActivityRef.current < 1000) return;
+      lastActivityRef.current = now;
+      arm();
+    }
+    function onVisibility() {
+      // If the tab was hidden longer than the idle window, lock immediately on return.
+      if (document.visibilityState === "visible") {
+        if (Date.now() - lastActivityRef.current >= idleMs) {
+          lockNow();
+          return;
+        }
+        arm();
+      }
+    }
+
+    arm();
+    const events: (keyof DocumentEventMap | keyof WindowEventMap)[] = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      if (lockTimerRef.current !== null) window.clearTimeout(lockTimerRef.current);
+      events.forEach((e) => window.removeEventListener(e, onActivity));
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [pub, pathname, router]);
 
   function onLock() {
     clearSession();

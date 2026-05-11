@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -63,7 +64,6 @@ export function db() {
   const row = _db.prepare("SELECT COUNT(*) as c FROM admin").get() as { c: number };
   if (row.c === 0) {
     // Stored as SHA-256 of "admin" — admin changes it via API later
-    const crypto = require("crypto");
     const hash = crypto.createHash("sha256").update("admin").digest("hex");
     _db.prepare("INSERT INTO admin (id, password_hash) VALUES (1, ?)").run(hash);
   }

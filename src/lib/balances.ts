@@ -21,7 +21,6 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 250): P
 
 const ETH_RPC = "https://cloudflare-eth.com";
 const SOL_RPC = "https://api.mainnet-beta.solana.com";
-const DOT_WS = "wss://rpc.polkadot.io";
 const BTC_API = "https://mempool.space/api";
 
 const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
@@ -67,18 +66,14 @@ export async function getSolBalance(address: string): Promise<number> {
 
 export async function getDotBalance(address: string): Promise<number> {
   return withRetry(async () => {
-    const { ApiPromise, WsProvider } = await import("@polkadot/api");
-    const provider = new WsProvider(DOT_WS);
-    const api = await ApiPromise.create({ provider });
-    try {
+    const { withDotApi } = await import("./polkadot-client");
+    return withDotApi(async (api) => {
       const acct = (await api.query.system.account(address)) as unknown as {
         data: { free: { toString(): string } };
       };
       const free = BigInt(acct.data.free.toString());
       return Number(free) / 1e10;
-    } finally {
-      await api.disconnect();
-    }
+    });
   });
 }
 

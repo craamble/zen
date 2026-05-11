@@ -20,6 +20,8 @@ export function NotificationsBell({ accountId }: { accountId: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Hydrating the read-marker from localStorage on mount / account change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLastRead(Number(localStorage.getItem(lastReadKey(accountId)) ?? 0));
   }, [accountId]);
 

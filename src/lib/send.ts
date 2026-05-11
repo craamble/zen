@@ -1,12 +1,19 @@
 import { ethers } from "ethers";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL, sendAndConfirmTransaction } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import * as bitcoin from "bitcoinjs-lib";
-import { deriveEth, deriveSol, deriveDot } from "./wallet";
+import { deriveEth, deriveSol } from "./wallet";
 import type { ChainSymbol } from "./wallet";
 
 const ETH_RPC = "https://cloudflare-eth.com";
 const SOL_RPC = "https://api.mainnet-beta.solana.com";
-const DOT_WS = "wss://rpc.polkadot.io";
 
 const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -42,30 +49,47 @@ export async function sendSol(mnemonic: string, to: string, amount: string): Pro
   const { secretKey } = await deriveSol(mnemonic);
   const kp = Keypair.fromSecretKey(Buffer.from(secretKey, "hex"));
   const conn = new Connection(SOL_RPC, "confirmed");
-  const tx = new Transaction().add(
+
+  const instructions = [
     SystemProgram.transfer({
       fromPubkey: kp.publicKey,
       toPubkey: new PublicKey(to),
       lamports: Math.round(parseFloat(amount) * LAMPORTS_PER_SOL),
     }),
+  ];
+  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  const message = new TransactionMessage({
+    payerKey: kp.publicKey,
+    recentBlockhash: blockhash,
+    instructions,
+  }).compileToV0Message();
+  const tx = new VersionedTransaction(message);
+  tx.sign([kp]);
+
+  const sig = await conn.sendRawTransaction(tx.serialize(), {
+    skipPreflight: false,
+    maxRetries: 3,
+  });
+  // Wait for confirmation using the recent blockhash window.
+  await conn.confirmTransaction(
+    { signature: sig, blockhash, lastValidBlockHeight },
+    "confirmed",
   );
-  const sig = await sendAndConfirmTransaction(conn, tx, [kp]);
   return sig;
 }
 
 export async function sendDot(mnemonic: string, to: string, amount: string): Promise<string> {
-  const { ApiPromise, WsProvider } = await import("@polkadot/api");
+  const { withDotApi } = await import("./polkadot-client");
   const { Keyring } = await import("@polkadot/keyring");
   const { cryptoWaitReady } = await import("@polkadot/util-crypto");
   await cryptoWaitReady();
-  const provider = new WsProvider(DOT_WS);
-  const api = await ApiPromise.create({ provider });
-  const keyring = new Keyring({ type: "sr25519", ss58Format: 0 });
-  const pair = keyring.addFromMnemonic(mnemonic);
-  const planck = BigInt(Math.round(parseFloat(amount) * 1e10));
-  const hash = await api.tx.balances.transferKeepAlive(to, planck).signAndSend(pair);
-  await api.disconnect();
-  return hash.toHex();
+  return withDotApi(async (api) => {
+    const keyring = new Keyring({ type: "sr25519", ss58Format: 0 });
+    const pair = keyring.addFromMnemonic(mnemonic);
+    const planck = BigInt(Math.round(parseFloat(amount) * 1e10));
+    const hash = await api.tx.balances.transferKeepAlive(to, planck).signAndSend(pair);
+    return hash.toHex();
+  });
 }
 
 // ---- BTC (BIP84 native segwit / P2WPKH) sending ----

@@ -50,8 +50,18 @@ function TokensEditor({ accountId }: { accountId: string }) {
   }
 
   useEffect(() => {
-    if (open && tokens === null) load();
-  }, [open]);
+    if (!open || tokens !== null) return;
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`/api/admin/tokens?accountId=${encodeURIComponent(accountId)}`);
+      if (!r.ok || cancelled) return;
+      const d = await r.json();
+      if (!cancelled) setTokens(d.tokens);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tokens, accountId]);
 
   async function addToken() {
     if (!name.trim() || !balance.trim()) return;

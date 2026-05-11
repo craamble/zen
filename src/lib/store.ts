@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AccountRow, NotificationRow, CustomTokenRow } from "./db";
 
 export type { AccountRow, NotificationRow, CustomTokenRow };
@@ -11,17 +12,13 @@ function defaultAdminHash(): string {
   return crypto.createHash("sha256").update("admin").digest("hex");
 }
 
-let _client: ReturnType<typeof buildClient> | null = null;
-function buildClient() {
+let _client: SupabaseClient | null = null;
+function sb(): SupabaseClient {
+  if (_client) return _client;
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error("Supabase env not set");
-  // Lazy require to avoid bundling when unused (e.g. local SQLite path).
-  const { createClient } = require("@supabase/supabase-js") as typeof import("@supabase/supabase-js");
-  return createClient(SUPABASE_URL, SUPABASE_KEY, {
+  _client = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-function sb() {
-  if (!_client) _client = buildClient();
   return _client;
 }
 

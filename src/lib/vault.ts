@@ -122,3 +122,27 @@ export function getSessionMnemonic(): string | null {
 export function clearSession() {
   sessionStorage.removeItem(SESSION_KEY);
 }
+
+// ---- Auto-lock preference ----
+// Minutes of inactivity before the wallet auto-locks. 0 = never.
+const AUTOLOCK_KEY = "zenwallet.autolock.v1";
+export const AUTOLOCK_OPTIONS = [
+  { value: 1, label: "1 minute" },
+  { value: 5, label: "5 minutes" },
+  { value: 15, label: "15 minutes" },
+  { value: 30, label: "30 minutes" },
+  { value: 60, label: "1 hour" },
+  { value: 0, label: "Never" },
+] as const;
+export const AUTOLOCK_DEFAULT_MINUTES = 15;
+
+export function loadAutoLockMinutes(): number {
+  if (typeof window === "undefined") return AUTOLOCK_DEFAULT_MINUTES;
+  const raw = localStorage.getItem(AUTOLOCK_KEY);
+  if (raw === null) return AUTOLOCK_DEFAULT_MINUTES;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : AUTOLOCK_DEFAULT_MINUTES;
+}
+export function saveAutoLockMinutes(minutes: number) {
+  localStorage.setItem(AUTOLOCK_KEY, String(minutes));
+}
