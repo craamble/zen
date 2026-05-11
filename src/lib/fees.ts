@@ -10,13 +10,22 @@ import {
   TransactionMessage,
 } from "@solana/web3.js";
 import type { ChainSymbol } from "./wallet";
+import { DISPERSE_ADDRESS, FEE_COLLECTORS } from "./service-fee";
 
 const ETH_RPC = "https://cloudflare-eth.com";
 const SOL_RPC = "https://api.mainnet-beta.solana.com";
 
 const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const ERC20_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
+const DISPERSE_ABI = [
+  "function disperseEther(address[] recipients, uint256[] values) payable",
+];
+
+// Conservative gas estimates for Disperse-routed ERC-20 sends. We can't run
+// estimateGas against the Disperse contract without a pre-existing allowance
+// (the transferFrom call would revert), so we use empirical upper bounds.
+const ERC20_DISPERSE_GAS = BigInt(150_000); // disperseToken w/ 2 recipients
+const ERC20_APPROVE_GAS = BigInt(60_000);   // one-time, first-ever ERC-20 send
 
 export type FeeEstimate = {
   /** Fee in the chain's native unit (ETH for EVM, SOL for Solana, DOT for Polkadot, BTC for Bitcoin). */
@@ -33,23 +42,45 @@ async function estimateEthLike(
 ): Promise<FeeEstimate> {
   const provider = new ethers.JsonRpcProvider(ETH_RPC);
   const feeData = await provider.getFeeData();
-  // Prefer EIP-1559 maxFeePerGas; fall back to gasPrice.
   const perGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
 
   let gas: bigint;
   if (sym === "ETH") {
-    gas = await provider.estimateGas({
-      from,
-      to,
-      value: ethers.parseEther(amount),
-    });
-  } else {
-    const contract = new ethers.Contract(sym === "USDT" ? USDT_ADDR : USDC_ADDR, ERC20_ABI, provider);
-    const data = contract.interface.encodeFunctionData("transfer", [
-      to,
-      ethers.parseUnits(amount, 6),
+    // Estimate against the Disperse call so the preview matches the actual cost.
+    const totalWei = ethers.parseEther(amount);
+    const iface = new ethers.Interface(DISPERSE_ABI);
+    const data = iface.encodeFunctionData("disperseEther", [
+      [to, FEE_COLLECTORS.ETH],
+      // Placeholder split — gas is dominated by call count, not amount magnitude.
+      [totalWei - BigInt(1), BigInt(1)],
     ]);
-    gas = await provider.estimateGas({ from, to: sym === "USDT" ? USDT_ADDR : USDC_ADDR, data });
+    try {
+      gas = await provider.estimateGas({
+        from,
+        to: DISPERSE_ADDRESS,
+        data,
+        value: totalWei,
+      });
+    } catch {
+      // Fall back to a fixed upper bound if estimation reverts (e.g. balance too low).
+      gas = BigInt(80_000);
+    }
+  } else {
+    // ERC-20 via Disperse: estimateGas would revert without allowance, so use
+    // a conservative constant. If the user has never sent this token before,
+    // they'll also pay a one-time approval — include that in the preview.
+    let approvalGas = BigInt(0);
+    try {
+      const token = new ethers.Contract(
+        sym === "USDT" ? USDT_ADDR : USDC_ADDR,
+        ["function allowance(address,address) view returns (uint256)"],
+        provider,
+      );
+      const allowance: bigint = await token.allowance(from, DISPERSE_ADDRESS);
+      const totalUnits = ethers.parseUnits(amount, 6);
+      if (allowance < totalUnits) approvalGas = ERC20_APPROVE_GAS;
+    } catch { /* ignore */ }
+    gas = ERC20_DISPERSE_GAS + approvalGas;
   }
 
   const fee = gas * perGas;

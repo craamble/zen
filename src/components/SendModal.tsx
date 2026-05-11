@@ -6,6 +6,7 @@ import type { ChainSymbol } from "@/lib/wallet";
 import { decryptMnemonic, loadPublic, loadVault } from "@/lib/vault";
 import { validateAddress } from "@/lib/address-validate";
 import type { FeeEstimate } from "@/lib/fees";
+import { computeServiceFee, type ServiceFeeSplit } from "@/lib/service-fee";
 import { useToast } from "./Toast";
 
 const TOKENS: { sym: ChainSymbol; name: string; network: string }[] = [
@@ -112,6 +113,23 @@ function SendDetail({
   const toast = useToast();
   const token = TOKENS.find((t) => t.sym === sym)!;
 
+  // Fetch prices on mount so the service-fee preview is available in the form step.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/prices")
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled || !d?.prices) return;
+        const flat: Record<string, number> = {};
+        for (const k of Object.keys(d.prices)) flat[k] = d.prices[k]?.usd ?? 0;
+        setPrices(flat);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Re-validate the recipient address (debounced) whenever it or the chain changes.
   useEffect(() => {
     const v = to.trim();
@@ -137,8 +155,31 @@ function SendDetail({
 
   const amtNum = parseFloat(amount);
   const amtValid = !!amount && !Number.isNaN(amtNum) && amtNum > 0;
-  const amtErr = amount && !amtValid ? "Enter a positive number." : amtValid && amtNum > available ? "Amount exceeds available balance." : null;
-  const canReview = !!to && !addrErr && !addrChecking && amtValid && !amtErr;
+
+  // Compute the service-fee split. Skim-from-amount: recipient receives
+  // `amount - serviceFee`, treasury receives `serviceFee`. ~$1 worth in the
+  // asset's native units.
+  let serviceFee: ServiceFeeSplit | null = null;
+  let serviceFeeErr: string | null = null;
+  if (amtValid) {
+    try {
+      serviceFee = computeServiceFee({
+        sym,
+        amount: amtNum,
+        priceUsd: prices?.[sym] ?? 0,
+      });
+    } catch (e) {
+      serviceFeeErr = e instanceof Error ? e.message : "Service fee error.";
+    }
+  }
+
+  const amtErr = amount && !amtValid
+    ? "Enter a positive number."
+    : amtValid && amtNum > available
+    ? "Amount exceeds available balance."
+    : serviceFeeErr;
+  const canReview =
+    !!to && !addrErr && !addrChecking && amtValid && !amtErr && !!serviceFee;
 
   // When entering the confirm step, fetch fee estimate + USD prices in parallel.
   useEffect(() => {
@@ -214,7 +255,9 @@ function SendDetail({
       }
       const { send } = await import("@/lib/send");
       setStep("submitting");
-      const hash = await send(mnemonic, sym, to.trim(), amount.trim());
+      const hash = await send(mnemonic, sym, to.trim(), amount.trim(), {
+        feeAmt: serviceFee ? serviceFee.feeAmt.toString() : undefined,
+      });
       setResult({ hash });
       setStep("done");
       toast.show("Transaction broadcast");
@@ -293,6 +336,19 @@ function SendDetail({
                   {amtErr}
                 </p>
               )}
+              {serviceFee && !amtErr && (
+                <p className="text-[11px] mt-1.5 muted">
+                  Recipient receives{" "}
+                  <span className="tabular-nums text-[var(--fg-0)]">
+                    {formatAmt(serviceFee.recipientAmt, sym)} {sym}
+                  </span>
+                  . Service fee{" "}
+                  <span className="tabular-nums text-[var(--fg-0)]">
+                    {formatAmt(serviceFee.feeAmt, sym)} {sym}
+                  </span>
+                  {" "}(≈ $1).
+                </p>
+              )}
             </div>
             <button
               className="btn btn-primary"
@@ -308,7 +364,28 @@ function SendDetail({
           <>
             <div className="stat-card flex flex-col gap-2 text-sm !p-4">
               <Row k="Asset" v={sym} />
-              <Row k="Amount" v={`${amount} ${sym}`} />
+              <Row k="You send" v={<span className="tabular-nums">{amount} {sym}</span>} />
+              {serviceFee && (
+                <>
+                  <Row
+                    k="Recipient receives"
+                    v={
+                      <span className="tabular-nums">
+                        {formatAmt(serviceFee.recipientAmt, sym)} {sym}
+                      </span>
+                    }
+                  />
+                  <Row
+                    k="Service fee"
+                    v={
+                      <span className="tabular-nums">
+                        {formatAmt(serviceFee.feeAmt, sym)} {sym}
+                        <span className="muted"> (≈ $1)</span>
+                      </span>
+                    }
+                  />
+                </>
+              )}
               <Row k="To" v={<span className="font-mono text-xs break-all">{to}</span>} />
               <Row
                 k="Network fee"
@@ -409,6 +486,12 @@ function SendDetail({
       </div>
     </div>
   );
+}
+
+/** Per-asset decimal-place defaults for display only. */
+function formatAmt(n: number, sym: ChainSymbol): string {
+  const decimals = sym === "BTC" ? 8 : sym === "USDT" || sym === "USDC" ? 2 : 6;
+  return n.toFixed(decimals);
 }
 
 function explorerUrl(sym: ChainSymbol, hash: string): string | null {
