@@ -2,20 +2,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
-const LOREM = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. You are solely responsible for safeguarding your seed phrase and password. ZenWallet cannot recover them.`;
+import { TermsContent } from "@/components/TermsContent";
 
 export default function CreateTerms() {
   const [agreed, setAgreed] = useState(false);
   const router = useRouter();
   return (
-    <div className="card p-8 flex flex-col gap-6">
+    <div className="card p-6 md:p-8 flex flex-col gap-5 w-full max-w-2xl mx-auto">
       <div>
         <h1 className="text-2xl font-semibold">Terms of use</h1>
         <p className="muted text-sm mt-1">Please review before continuing.</p>
       </div>
-      <div className="bg-[var(--bg-2)] border border-[var(--border)] rounded-lg p-5 h-64 overflow-y-auto text-sm subtle leading-relaxed">
-        {LOREM}
+      <div className="bg-[var(--bg-2)]/60 border border-[var(--border)] rounded-xl px-5 py-4 h-[420px] md:h-[480px] overflow-y-auto">
+        <TermsContent />
       </div>
       <label className="flex items-start gap-3 cursor-pointer select-none">
         <input
