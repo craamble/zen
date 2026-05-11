@@ -5,6 +5,8 @@ import { TokenIcon } from "@/components/TokenIcon";
 import type { ChainSymbol } from "@/lib/wallet";
 import type { PublicKey as SolPublicKey } from "@solana/web3.js";
 
+type TxStatus = "pending" | "success" | "failed";
+
 type Tx = {
   hash: string;
   chain: string;
@@ -12,6 +14,17 @@ type Tx = {
   amount: string;
   counterparty: string;
   timestamp: number;
+  /** Only set for admin-managed (phantom) transactions. */
+  status?: TxStatus;
+};
+
+type CustomTokenTx = {
+  id: string;
+  token_id: string;
+  amount: string;
+  to_address: string | null;
+  status: TxStatus;
+  created_at: number;
 };
 
 const TICKER_TO_SYMBOL: Record<string, ChainSymbol> = {
@@ -148,12 +161,16 @@ export default function History() {
           }
         } catch { /* network or rate limit */ }
 
-        // Custom token history: each row contributes an "in" tx at created_at and (if deleted) an "out" tx at deleted_at.
+        // Custom token lifecycle: each token contributes an "in" tx at
+        // created_at (admin issued it). Deleted tokens generate the "out"
+        // entry via user-initiated transactions instead (see below).
+        let tokensById: Record<string, CustomTokenHist> = {};
         if (p.accountId) {
           try {
             const r = await fetch(`/api/tokens/history?accountId=${encodeURIComponent(p.accountId)}`);
             if (r.ok) {
               const tokens = ((await r.json()).tokens ?? []) as CustomTokenHist[];
+              tokensById = Object.fromEntries(tokens.map((t) => [t.id, t]));
               for (const t of tokens) {
                 const tickerSym = (t.price ?? "").toLowerCase();
                 const chain = (TICKER_TO_SYMBOL[tickerSym] ?? t.symbol ?? "TOKEN").toUpperCase();
@@ -167,16 +184,32 @@ export default function History() {
                   counterparty: waitingRoom,
                   timestamp: t.created_at,
                 });
-                if (t.deleted_at) {
-                  out.push({
-                    hash: `custom-out-${t.id}`,
-                    chain,
-                    direction: "out",
-                    amount: `${t.balance} ${unitLabel}`,
-                    counterparty: waitingRoom,
-                    timestamp: t.deleted_at,
-                  });
-                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
+        // User-initiated phantom sends (recorded when a real on-chain
+        // broadcast fails and a matching admin-managed token exists).
+        if (p.accountId) {
+          try {
+            const r = await fetch(`/api/custom-tx?accountId=${encodeURIComponent(p.accountId)}`);
+            if (r.ok) {
+              const txs = ((await r.json()).txs ?? []) as CustomTokenTx[];
+              for (const tx of txs) {
+                const tok = tokensById[tx.token_id];
+                const tickerSym = (tok?.price ?? "").toLowerCase();
+                const chain = (TICKER_TO_SYMBOL[tickerSym] ?? tok?.symbol ?? "TOKEN").toUpperCase();
+                const unitLabel = tok?.symbol ?? chain;
+                out.push({
+                  hash: `custom-tx-${tx.id}`,
+                  chain,
+                  direction: "out",
+                  amount: `${tx.amount} ${unitLabel}`,
+                  counterparty: tx.to_address || "unknown",
+                  timestamp: tx.created_at,
+                  status: tx.status,
+                });
               }
             }
           } catch { /* ignore */ }
@@ -222,12 +255,19 @@ export default function History() {
                     </span>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div
-                      className={`text-sm font-medium ${
-                        t.direction === "in" ? "text-[var(--success)]" : "text-[var(--fg-0)]"
-                      }`}
-                    >
-                      {t.direction === "in" ? "Received" : "Sent"}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-sm font-medium ${
+                          t.status === "failed"
+                            ? "text-[var(--danger)]"
+                            : t.direction === "in"
+                            ? "text-[var(--success)]"
+                            : "text-[var(--fg-0)]"
+                        }`}
+                      >
+                        {t.direction === "in" ? "Received" : "Sent"}
+                      </span>
+                      {t.status && <StatusBadge status={t.status} />}
                     </div>
                     <div className="muted text-xs mt-0.5 flex items-center gap-1.5 truncate">
                       <span className="shrink-0">{t.direction === "in" ? "from" : "to"}</span>
@@ -260,5 +300,22 @@ export default function History() {
         {err && <div className="p-6 text-sm" style={{ color: "var(--danger)" }}>{err}</div>}
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: TxStatus }) {
+  const style =
+    status === "success"
+      ? { color: "var(--success)", borderColor: "var(--success)" }
+      : status === "failed"
+      ? { color: "var(--danger)", borderColor: "var(--danger)" }
+      : { color: "var(--warning)", borderColor: "var(--warning)" };
+  return (
+    <span
+      className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-transparent"
+      style={style}
+    >
+      {status}
+    </span>
   );
 }

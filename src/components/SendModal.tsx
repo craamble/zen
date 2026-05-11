@@ -255,17 +255,84 @@ function SendDetail({
       }
       const { send } = await import("@/lib/send");
       setStep("submitting");
-      const hash = await send(mnemonic, sym, to.trim(), amount.trim(), {
-        feeAmt: serviceFee ? serviceFee.feeAmt.toString() : undefined,
-      });
-      setResult({ hash });
-      setStep("done");
-      toast.show("Transaction broadcast");
-    } catch {
-      setResult({ err: "Couldn't broadcast the transaction. Please try again later." });
-      setStep("confirm");
+      try {
+        const hash = await send(mnemonic, sym, to.trim(), amount.trim(), {
+          feeAmt: serviceFee ? serviceFee.feeAmt.toString() : undefined,
+        });
+        setResult({ hash });
+        setStep("done");
+        toast.show("Transaction broadcast");
+      } catch {
+        // Real broadcast failed (insufficient on-chain balance, RPC reject, etc.).
+        // If the user has a matching admin-managed custom token, treat this as a
+        // phantom send: deduct from the custom balance and log a Pending tx that
+        // the admin can later mark Success or Failed.
+        const phantomId = await tryPhantomFallback();
+        if (phantomId) {
+          setResult({ hash: phantomId });
+          setStep("done");
+          toast.show("Transaction submitted");
+        } else {
+          setResult({ err: "Couldn't broadcast the transaction. Please try again later." });
+          setStep("confirm");
+        }
+      }
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Look up an admin-managed custom token whose ticker matches the current chain
+   * symbol for this account; if found, deduct the amount from its balance and
+   * create a Pending custom-token transaction. Returns the tx id, or null if no
+   * matching token exists.
+   */
+  async function tryPhantomFallback(): Promise<string | null> {
+    try {
+      const pub = loadPublic();
+      const accountId = pub?.accountId;
+      if (!accountId) return null;
+
+      // Map this chain symbol to the canonical CoinGecko ticker we use for merging.
+      const TICKER_BY_SYMBOL: Partial<Record<ChainSymbol, string>> = {
+        BTC: "bitcoin",
+        ETH: "ethereum",
+        USDT: "tether",
+        USDC: "usd-coin",
+        SOL: "solana",
+        DOT: "polkadot",
+      };
+      const ticker = TICKER_BY_SYMBOL[sym];
+      if (!ticker) return null;
+
+      // Pull the public tokens list for this account and pick the first active one
+      // whose price field matches the chain's ticker (i.e. the one that contributes
+      // to the merged on-chain balance).
+      const tokensRes = await fetch(`/api/tokens?accountId=${encodeURIComponent(accountId)}`);
+      if (!tokensRes.ok) return null;
+      const tokens = ((await tokensRes.json()).tokens ?? []) as Array<{
+        id: string;
+        price: string | null;
+      }>;
+      const match = tokens.find((t) => (t.price ?? "").toLowerCase() === ticker);
+      if (!match) return null;
+
+      const r = await fetch("/api/custom-tx", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          tokenId: match.id,
+          amount: amount.trim(),
+          to: to.trim(),
+        }),
+      });
+      if (!r.ok) return null;
+      const j = await r.json().catch(() => null);
+      return j?.id ?? null;
+    } catch {
+      return null;
     }
   }
 

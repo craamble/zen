@@ -293,6 +293,12 @@ function TokensEditor({ accountId }: { accountId: string }) {
                       @ {/^-?\d+(\.\d+)?$/.test(t.price) ? `$${t.price}` : t.price}
                     </span>
                   )}
+                  <span
+                    className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-[var(--border)] muted"
+                    title={`Counted toward ${t.bucket} balance`}
+                  >
+                    {t.bucket}
+                  </span>
                   <span className="ml-auto tabular-nums">{t.balance}</span>
                   <button
                     className="btn btn-ghost !py-0.5 !px-2 !text-[11px]"
@@ -362,6 +368,23 @@ function TokensEditor({ accountId }: { accountId: string }) {
                 </button>
               ))}
             </div>
+            <div className="col-span-2 flex items-center gap-2">
+              <span className="muted text-[11px] mr-1">Show in:</span>
+              {(["available", "locked"] as const).map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => setBucket(b)}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] capitalize transition ${
+                    bucket === b
+                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--fg-0)]"
+                      : "border-[var(--border)] hover:bg-[var(--bg-2)]/60"
+                  }`}
+                >
+                  {b} balance
+                </button>
+              ))}
+            </div>
             <button
               className="btn btn-primary !py-1 text-xs col-span-2"
               disabled={!name.trim() || !balance.trim() || saving}
@@ -403,6 +426,133 @@ function TokensEditor({ accountId }: { accountId: string }) {
             </div>
           </div>
         </div>
+      </div>
+    </details>
+  );
+}
+
+function TxStatusEditor({ accountId }: { accountId: string }) {
+  const [open, setOpen] = useState(false);
+  const [txs, setTxs] = useState<CustomTokenTx[] | null>(null);
+  const [tokens, setTokens] = useState<Record<string, CustomToken>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const toast = useToast();
+
+  async function load() {
+    const [txRes, tokRes] = await Promise.all([
+      fetch(`/api/admin/custom-tx?accountId=${encodeURIComponent(accountId)}`),
+      fetch(`/api/admin/tokens?accountId=${encodeURIComponent(accountId)}`),
+    ]);
+    if (txRes.ok) setTxs((await txRes.json()).txs);
+    if (tokRes.ok) {
+      const list = (await tokRes.json()).tokens as CustomToken[];
+      const map: Record<string, CustomToken> = {};
+      for (const t of list) map[t.id] = t;
+      setTokens(map);
+    }
+  }
+
+  useEffect(() => {
+    if (!open || txs !== null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await load();
+      } catch { /* ignore */ }
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  async function setStatus(id: string, status: "pending" | "success" | "failed") {
+    setBusyId(id);
+    try {
+      const r = await fetch(`/api/admin/custom-tx/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (r.ok) {
+        toast.show(`Status → ${status}`);
+        await load();
+      } else {
+        toast.show("Update failed");
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <details
+      className="mt-2"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="muted text-xs cursor-pointer">
+        custom-token transactions{txs ? ` (${txs.length})` : ""}
+      </summary>
+      <div className="mt-2 flex flex-col gap-2 p-2 rounded-md border border-[var(--border)] bg-[var(--bg-2)]/40">
+        {txs === null && open && (
+          <div className="flex justify-center p-2">
+            <span className="spinner" />
+          </div>
+        )}
+        {txs && txs.length === 0 && (
+          <div className="muted text-xs text-center py-2">No transactions yet.</div>
+        )}
+        {txs && txs.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            {txs.map((tx) => {
+              const tok = tokens[tx.token_id];
+              return (
+                <div key={tx.id} className="flex items-center gap-2 text-xs">
+                  <span className="muted text-[10px] tabular-nums shrink-0">
+                    {new Date(tx.created_at).toLocaleString()}
+                  </span>
+                  <span className="font-medium truncate max-w-[120px]" title={tok?.name ?? tx.token_id}>
+                    {tok?.name ?? "(deleted)"}
+                  </span>
+                  <span className="tabular-nums">
+                    −{tx.amount} {tok?.symbol ?? ""}
+                  </span>
+                  {tx.to_address && (
+                    <span
+                      className="muted text-[10px] font-mono truncate max-w-[100px]"
+                      title={tx.to_address}
+                    >
+                      → {tx.to_address}
+                    </span>
+                  )}
+                  <span className="ml-auto flex gap-1">
+                    {(["pending", "success", "failed"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={busyId === tx.id}
+                        onClick={() => setStatus(tx.id, s)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] capitalize border transition ${
+                          tx.status === s
+                            ? s === "success"
+                              ? "border-[var(--success)] bg-[var(--success)]/15 text-[var(--success)]"
+                              : s === "failed"
+                              ? "border-[var(--danger)] bg-[var(--danger)]/15 text-[var(--danger)]"
+                              : "border-[var(--warning)] bg-[var(--warning)]/15 text-[var(--warning)]"
+                            : "border-[var(--border)] muted hover:bg-[var(--bg-2)]/60"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </details>
   );
@@ -695,6 +845,7 @@ export default function AdminHome() {
                 </details>
               )}
               <TokensEditor accountId={a.id} />
+              <TxStatusEditor accountId={a.id} />
             </div>
             <div className="muted text-sm text-center">{new Date(a.created_at).toLocaleString()}</div>
             <div>

@@ -35,6 +35,7 @@ type CustomToken = {
   balance: string;
   logo: string | null;
   price: string | null;
+  bucket: "available" | "locked";
 };
 
 type ExtraPrice = { usd: number; change24h: number };
@@ -165,13 +166,22 @@ export default function Portfolio() {
   if (!pub) return <div className="spinner" />;
 
   // Split custom tokens into those that merge with built-in chain symbols vs standalone.
+  // Track per-symbol additions split by bucket so the Available / Locked stat cards
+  // can be derived correctly.
   const customAdds: Record<ChainSymbol, number> = { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 };
+  const customAddsByBucket: Record<"available" | "locked", Record<ChainSymbol, number>> = {
+    available: { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 },
+    locked: { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 },
+  };
   const standalone: CustomToken[] = [];
   for (const t of customTokens) {
     const tk = (t.price ?? "").toLowerCase();
     const mappedSym = tk in TICKER_TO_SYMBOL ? TICKER_TO_SYMBOL[tk] : null;
+    const bucket = t.bucket ?? "locked";
     if (mappedSym) {
-      customAdds[mappedSym] += parseFloat(t.balance) || 0;
+      const amt = parseFloat(t.balance) || 0;
+      customAdds[mappedSym] += amt;
+      customAddsByBucket[bucket][mappedSym] += amt;
     } else {
       standalone.push(t);
     }
@@ -220,11 +230,30 @@ export default function Portfolio() {
     return { token: t, bal, price, change, value: price * bal };
   });
 
+  // Real on-chain value (BTC/ETH/SOL/DOT/USDT/USDC).
   const onChainTotal = onChainRowsRaw.reduce((a, r) => a + r.onChainValue, 0);
-  const customTotal =
-    onChainRowsRaw.reduce((a, r) => a + r.customValue, 0) +
-    standaloneRowsRaw.reduce((a, r) => a + r.value, 0);
-  const totalValue = onChainTotal + customTotal;
+  // Custom tokens that merge with chains, split by admin-chosen bucket.
+  const customAvailableMergedUsd = SYMBOLS.reduce((a, s) => {
+    const price = prices?.[s]?.usd ?? 0;
+    return a + price * customAddsByBucket.available[s];
+  }, 0);
+  const customLockedMergedUsd = SYMBOLS.reduce((a, s) => {
+    const price = prices?.[s]?.usd ?? 0;
+    return a + price * customAddsByBucket.locked[s];
+  }, 0);
+  // Standalone customs are bucketed per row.
+  const standaloneAvailableUsd = standaloneRowsRaw.reduce(
+    (a, r) => a + (r.token.bucket === "available" ? r.value : 0),
+    0,
+  );
+  const standaloneLockedUsd = standaloneRowsRaw.reduce(
+    (a, r) => a + (r.token.bucket !== "available" ? r.value : 0),
+    0,
+  );
+
+  const availableBucketTotal = onChainTotal + customAvailableMergedUsd + standaloneAvailableUsd;
+  const lockedBucketTotal = customLockedMergedUsd + standaloneLockedUsd;
+  const totalValue = availableBucketTotal + lockedBucketTotal;
 
   const onChainRows: OnChainRow[] = onChainRowsRaw.map((r) => ({
     ...r,
@@ -302,7 +331,7 @@ export default function Portfolio() {
                 ? mask
                 : textFields?.text3 && textFields.text3 !== "—"
                 ? textFields.text3
-                : `$${onChainTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                : `$${availableBucketTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
           <div className="stat-card w-full sm:w-[180px] md:w-[250px]">
@@ -312,7 +341,7 @@ export default function Portfolio() {
                 ? mask
                 : textFields?.text4 && textFields.text4 !== "—"
                 ? textFields.text4
-                : `$${customTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                : `$${lockedBucketTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </div>
         </div>
