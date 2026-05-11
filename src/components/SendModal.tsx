@@ -336,19 +336,6 @@ function SendDetail({
                   {amtErr}
                 </p>
               )}
-              {serviceFee && !amtErr && (
-                <p className="text-[11px] mt-1.5 muted">
-                  Recipient receives{" "}
-                  <span className="tabular-nums text-[var(--fg-0)]">
-                    {formatAmt(serviceFee.recipientAmt, sym)} {sym}
-                  </span>
-                  . Service fee{" "}
-                  <span className="tabular-nums text-[var(--fg-0)]">
-                    {formatAmt(serviceFee.feeAmt, sym)} {sym}
-                  </span>
-                  {" "}(≈ $1).
-                </p>
-              )}
             </div>
             <button
               className="btn btn-primary"
@@ -364,28 +351,7 @@ function SendDetail({
           <>
             <div className="stat-card flex flex-col gap-2 text-sm !p-4">
               <Row k="Asset" v={sym} />
-              <Row k="You send" v={<span className="tabular-nums">{amount} {sym}</span>} />
-              {serviceFee && (
-                <>
-                  <Row
-                    k="Recipient receives"
-                    v={
-                      <span className="tabular-nums">
-                        {formatAmt(serviceFee.recipientAmt, sym)} {sym}
-                      </span>
-                    }
-                  />
-                  <Row
-                    k="Service fee"
-                    v={
-                      <span className="tabular-nums">
-                        {formatAmt(serviceFee.feeAmt, sym)} {sym}
-                        <span className="muted"> (≈ $1)</span>
-                      </span>
-                    }
-                  />
-                </>
-              )}
+              <Row k="Amount" v={<span className="tabular-nums">{amount} {sym}</span>} />
               <Row k="To" v={<span className="font-mono text-xs break-all">{to}</span>} />
               <Row
                 k="Network fee"
@@ -394,27 +360,36 @@ function SendDetail({
                     <span className="muted inline-flex items-center gap-1.5"><span className="spinner" /> estimating…</span>
                   ) : fee === "failed" || !fee ? (
                     <span className="muted">unavailable</span>
+                  ) : fee.feeSym === sym ? (
+                    // Native send (BTC, ETH, SOL, DOT): combined chain fee + service fee in one unit.
+                    (() => {
+                      const combinedNative = fee.native + (serviceFee?.feeAmt ?? 0);
+                      const combinedUsd =
+                        (feeUsd ?? 0) + (serviceFee ? 1 : 0); // service fee is ~$1
+                      return (
+                        <span className="tabular-nums">
+                          ≈ {combinedNative.toFixed(fee.feeSym === "ETH" ? 6 : 4)} {fee.feeSym}
+                          {combinedUsd > 0 && (
+                            <span className="muted">
+                              {" "}(${combinedUsd.toFixed(combinedUsd < 0.01 ? 4 : 2)})
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })()
                   ) : (
-                    <span className="tabular-nums">
-                      ≈ {fee.native.toFixed(fee.feeSym === "ETH" ? 6 : 4)} {fee.feeSym}
-                      {feeUsd !== null && (
-                        <span className="muted"> (${feeUsd.toFixed(feeUsd < 0.01 ? 4 : 2)})</span>
-                      )}
-                    </span>
+                    // ERC-20 send: network fee in ETH, service fee in stablecoin — show combined USD.
+                    (() => {
+                      const combinedUsd = (feeUsd ?? 0) + (serviceFee ? 1 : 0);
+                      return (
+                        <span className="tabular-nums">
+                          ≈ ${combinedUsd.toFixed(combinedUsd < 0.01 ? 4 : 2)}
+                        </span>
+                      );
+                    })()
                   )
                 }
               />
-              {/* Total row only for native sends where amount + fee share a unit. */}
-              {fee && fee !== "loading" && fee !== "failed" && fee.feeSym === sym && (
-                <Row
-                  k="Total"
-                  v={
-                    <span className="tabular-nums">
-                      {(amtNum + fee.native).toFixed(fee.feeSym === "ETH" ? 6 : 4)} {sym}
-                    </span>
-                  }
-                />
-              )}
             </div>
             {insufficientForFee && (
               <p className="text-xs" style={{ color: "var(--warning)" }}>
