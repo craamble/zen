@@ -1,8 +1,20 @@
 import crypto from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AccountRow, NotificationRow, CustomTokenRow } from "./db";
+import type {
+  AccountRow,
+  NotificationRow,
+  CustomTokenRow,
+  CustomTokenTxRow,
+  CustomTokenTxStatus,
+} from "./db";
 
-export type { AccountRow, NotificationRow, CustomTokenRow };
+export type {
+  AccountRow,
+  NotificationRow,
+  CustomTokenRow,
+  CustomTokenTxRow,
+  CustomTokenTxStatus,
+};
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -218,15 +230,26 @@ export async function insertCustomToken(row: CustomTokenRow): Promise<void> {
   const { db } = await import("./db");
   db()
     .prepare(
-      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, price, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO custom_tokens (id, account_id, name, symbol, balance, logo, price, bucket, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(row.id, row.account_id, row.name, row.symbol, row.balance, row.logo, row.price, row.deleted_at, row.created_at);
+    .run(
+      row.id,
+      row.account_id,
+      row.name,
+      row.symbol,
+      row.balance,
+      row.logo,
+      row.price,
+      row.bucket,
+      row.deleted_at,
+      row.created_at,
+    );
 }
 
 export async function patchCustomToken(
   id: string,
-  patch: Partial<Pick<CustomTokenRow, "name" | "symbol" | "balance" | "logo" | "price">>,
+  patch: Partial<Pick<CustomTokenRow, "name" | "symbol" | "balance" | "logo" | "price" | "bucket">>,
 ): Promise<boolean> {
   if (useSupabase) {
     const { data, error } = await sb()
@@ -240,7 +263,7 @@ export async function patchCustomToken(
   const { db } = await import("./db");
   const fields: string[] = [];
   const values: (string | null)[] = [];
-  for (const key of ["name", "symbol", "balance", "logo", "price"] as const) {
+  for (const key of ["name", "symbol", "balance", "logo", "price", "bucket"] as const) {
     if (key in patch) {
       fields.push(`${key} = ?`);
       values.push((patch[key] ?? null) as string | null);
@@ -257,12 +280,89 @@ export async function patchCustomToken(
 export async function deleteCustomToken(id: string): Promise<void> {
   const ts = Date.now();
   if (useSupabase) {
-    const { error } = await sb().from("custom_tokens").update({ deleted_at: ts }).eq("id", id);
-    if (error) throw error;
+    const { error: e1 } = await sb().from("custom_tokens").update({ deleted_at: ts }).eq("id", id);
+    if (e1) throw e1;
+    // Any pending user-initiated sends of this token are settled as Success
+    // (admin chose to "deliver" them by removing the phantom balance).
+    const { error: e2 } = await sb()
+      .from("custom_token_txs")
+      .update({ status: "success", updated_at: ts })
+      .eq("token_id", id)
+      .eq("status", "pending");
+    if (e2) throw e2;
     return;
   }
   const { db } = await import("./db");
   db().prepare("UPDATE custom_tokens SET deleted_at = ? WHERE id = ?").run(ts, id);
+  db()
+    .prepare(
+      `UPDATE custom_token_txs SET status = 'success', updated_at = ? WHERE token_id = ? AND status = 'pending'`,
+    )
+    .run(ts, id);
+}
+
+// ---- Custom token transactions (user-initiated phantom sends) ----
+
+export async function listCustomTokenTxsFor(accountId: string): Promise<CustomTokenTxRow[]> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_token_txs")
+      .select("*")
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as CustomTokenTxRow[];
+  }
+  const { db } = await import("./db");
+  return db()
+    .prepare("SELECT * FROM custom_token_txs WHERE account_id = ? ORDER BY created_at DESC")
+    .all(accountId) as CustomTokenTxRow[];
+}
+
+export async function insertCustomTokenTx(row: CustomTokenTxRow): Promise<void> {
+  if (useSupabase) {
+    const { error } = await sb().from("custom_token_txs").insert(row);
+    if (error) throw error;
+    return;
+  }
+  const { db } = await import("./db");
+  db()
+    .prepare(
+      `INSERT INTO custom_token_txs (id, account_id, token_id, direction, amount, to_address, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.id,
+      row.account_id,
+      row.token_id,
+      row.direction,
+      row.amount,
+      row.to_address,
+      row.status,
+      row.created_at,
+      row.updated_at,
+    );
+}
+
+export async function patchCustomTokenTxStatus(
+  id: string,
+  status: CustomTokenTxStatus,
+): Promise<boolean> {
+  const ts = Date.now();
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_token_txs")
+      .update({ status, updated_at: ts })
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
+  }
+  const { db } = await import("./db");
+  const info = db()
+    .prepare("UPDATE custom_token_txs SET status = ?, updated_at = ? WHERE id = ?")
+    .run(status, ts, id);
+  return info.changes > 0;
 }
 
 export async function getAdminHash(): Promise<string> {

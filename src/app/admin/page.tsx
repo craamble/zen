@@ -11,8 +11,21 @@ type CustomToken = {
   balance: string;
   logo: string | null;
   price: string | null;
+  bucket: "available" | "locked";
   deleted_at: number | null;
   created_at: number;
+};
+
+type CustomTokenTx = {
+  id: string;
+  account_id: string;
+  token_id: string;
+  direction: "out";
+  amount: string;
+  to_address: string | null;
+  status: "pending" | "success" | "failed";
+  created_at: number;
+  updated_at: number;
 };
 
 const ICON_OPTIONS: { sym: string; src: string }[] = [
@@ -41,6 +54,7 @@ function TokensEditor({ accountId }: { accountId: string }) {
   const [balance, setBalance] = useState("");
   const [price, setPrice] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
+  const [bucket, setBucket] = useState<"available" | "locked">("locked");
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
@@ -81,11 +95,13 @@ function TokensEditor({ accountId }: { accountId: string }) {
           balance: balance.trim(),
           price: price.trim(),
           logo,
+          bucket,
         }),
       });
       if (r.ok) {
         toast.show("Token added");
         setName(""); setSymbol(""); setBalance(""); setPrice(""); setLogo(null);
+        setBucket("locked");
         await load();
       } else {
         const e = await r.json().catch(() => ({}));
@@ -113,7 +129,8 @@ function TokensEditor({ accountId }: { accountId: string }) {
     balance: string;
     price: string;
     logo: string | null;
-  }>({ name: "", symbol: "", balance: "", price: "", logo: null });
+    bucket: "available" | "locked";
+  }>({ name: "", symbol: "", balance: "", price: "", logo: null, bucket: "locked" });
   const [editSaving, setEditSaving] = useState(false);
 
   function startEdit(t: CustomToken) {
@@ -124,6 +141,7 @@ function TokensEditor({ accountId }: { accountId: string }) {
       balance: t.balance,
       price: t.price ?? "",
       logo: t.logo,
+      bucket: t.bucket,
     });
   }
 
@@ -144,6 +162,7 @@ function TokensEditor({ accountId }: { accountId: string }) {
           balance: editDraft.balance.trim(),
           price: editDraft.price.trim(),
           logo: editDraft.logo,
+          bucket: editDraft.bucket,
         }),
       });
       if (r.ok) {
@@ -219,6 +238,23 @@ function TokensEditor({ accountId }: { accountId: string }) {
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={o.src} alt={o.sym} className="w-5 h-5 rounded-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="muted">Show in:</span>
+                    {(["available", "locked"] as const).map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        onClick={() => setEditDraft({ ...editDraft, bucket: b })}
+                        className={`px-2 py-0.5 rounded-md border text-[11px] capitalize transition ${
+                          editDraft.bucket === b
+                            ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--fg-0)]"
+                            : "border-[var(--border)] hover:bg-[var(--bg-2)]/60"
+                        }`}
+                      >
+                        {b}
                       </button>
                     ))}
                   </div>

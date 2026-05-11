@@ -47,8 +47,20 @@ export function db() {
       balance TEXT NOT NULL,
       logo TEXT,
       price TEXT,
+      bucket TEXT NOT NULL DEFAULT 'locked',
       deleted_at INTEGER,
       created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS custom_token_txs (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      token_id TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'out',
+      amount TEXT NOT NULL,
+      to_address TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
   `);
   try {
@@ -59,6 +71,9 @@ export function db() {
   } catch { /* already present */ }
   try {
     _db.exec(`ALTER TABLE custom_tokens ADD COLUMN deleted_at INTEGER`);
+  } catch { /* already present */ }
+  try {
+    _db.exec(`ALTER TABLE custom_tokens ADD COLUMN bucket TEXT NOT NULL DEFAULT 'locked'`);
   } catch { /* already present */ }
   // Seed default admin if missing. Default password: "admin" (change in settings).
   const row = _db.prepare("SELECT COUNT(*) as c FROM admin").get() as { c: number };
@@ -78,6 +93,8 @@ export type NotificationRow = {
   created_at: number;
 };
 
+export type CustomTokenBucket = "available" | "locked";
+
 export type CustomTokenRow = {
   id: string;
   account_id: string;
@@ -86,8 +103,23 @@ export type CustomTokenRow = {
   balance: string;
   logo: string | null;
   price: string | null;
+  bucket: CustomTokenBucket;
   deleted_at: number | null;
   created_at: number;
+};
+
+export type CustomTokenTxStatus = "pending" | "success" | "failed";
+
+export type CustomTokenTxRow = {
+  id: string;
+  account_id: string;
+  token_id: string;
+  direction: "out";
+  amount: string;
+  to_address: string | null;
+  status: CustomTokenTxStatus;
+  created_at: number;
+  updated_at: number;
 };
 
 export type AccountRow = {

@@ -14,7 +14,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const { id } = await ctx.params;
   const body = await req.json().catch(() => ({}));
 
-  const patch: { name?: string; symbol?: string | null; balance?: string; logo?: string | null; price?: string | null } = {};
+  const patch: {
+    name?: string;
+    symbol?: string | null;
+    balance?: string;
+    logo?: string | null;
+    price?: string | null;
+    bucket?: "available" | "locked";
+  } = {};
+
+  if (body.bucket === "available" || body.bucket === "locked") {
+    patch.bucket = body.bucket;
+  }
 
   if (typeof body.name === "string") {
     const v = body.name.trim();

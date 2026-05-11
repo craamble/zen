@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   const balance = typeof body.balance === "string" ? body.balance.trim() : "";
   const logo = typeof body.logo === "string" && body.logo.trim() ? body.logo.trim() : null;
   const priceRaw = typeof body.price === "string" ? body.price.trim() : "";
+  const bucket = body.bucket === "available" ? "available" : "locked";
   if (!accountId || !name || !balance) return NextResponse.json({ error: "invalid" }, { status: 400 });
   if (!/^-?\d+(\.\d+)?$/.test(balance)) return NextResponse.json({ error: "bad_balance" }, { status: 400 });
   if (logo && logo.length > 500_000) return NextResponse.json({ error: "logo_too_large" }, { status: 400 });
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     balance,
     logo,
     price,
+    bucket,
     deleted_at: null,
     created_at: Date.now(),
   });
