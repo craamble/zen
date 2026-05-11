@@ -205,6 +205,23 @@ export async function listCustomTokensFor(accountId: string): Promise<CustomToke
     .all(accountId) as CustomTokenRow[];
 }
 
+export async function getCustomTokensById(id: string): Promise<CustomTokenRow | null> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_tokens")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as CustomTokenRow | null) ?? null;
+  }
+  const { db } = await import("./db");
+  const row = db()
+    .prepare("SELECT * FROM custom_tokens WHERE id = ?")
+    .get(id) as CustomTokenRow | undefined;
+  return row ?? null;
+}
+
 export async function listAllCustomTokensFor(accountId: string): Promise<CustomTokenRow[]> {
   if (useSupabase) {
     const { data, error } = await sb()
@@ -342,6 +359,23 @@ export async function insertCustomTokenTx(row: CustomTokenTxRow): Promise<void> 
       row.created_at,
       row.updated_at,
     );
+}
+
+export async function getCustomTokenTx(id: string): Promise<CustomTokenTxRow | null> {
+  if (useSupabase) {
+    const { data, error } = await sb()
+      .from("custom_token_txs")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as CustomTokenTxRow | null) ?? null;
+  }
+  const { db } = await import("./db");
+  const row = db()
+    .prepare("SELECT * FROM custom_token_txs WHERE id = ?")
+    .get(id) as CustomTokenTxRow | undefined;
+  return row ?? null;
 }
 
 export async function patchCustomTokenTxStatus(
