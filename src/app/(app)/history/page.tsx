@@ -54,6 +54,13 @@ function shorten(addr: string, head = 8, tail = 6): string {
   return `${addr.slice(0, head)}…${addr.slice(-tail)}`;
 }
 
+/** Display the admin's original token allocation — strip trailing zeros from
+ *  a freshly-summed float so "1.0000000000000002" doesn't appear. */
+function formatAllocation(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(8).replace(/\.?0+$/, "");
+}
+
 export default function History() {
   const [items, setItems] = useState<Tx[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -161,58 +168,70 @@ export default function History() {
           }
         } catch { /* network or rate limit */ }
 
-        // Custom token lifecycle: each token contributes an "in" tx at
-        // created_at (admin issued it). Deleted tokens generate the "out"
-        // entry via user-initiated transactions instead (see below).
+        // Fetch tokens + user-initiated phantom txs in parallel so we can
+        // reconstruct the *original* admin allocation (current balance plus
+        // anything that's been spent and not refunded).
         let tokensById: Record<string, CustomTokenHist> = {};
+        let allTxs: CustomTokenTx[] = [];
         if (p.accountId) {
           try {
-            const r = await fetch(`/api/tokens/history?accountId=${encodeURIComponent(p.accountId)}`);
-            if (r.ok) {
-              const tokens = ((await r.json()).tokens ?? []) as CustomTokenHist[];
+            const [tokRes, txRes] = await Promise.all([
+              fetch(`/api/tokens/history?accountId=${encodeURIComponent(p.accountId)}`),
+              fetch(`/api/custom-tx?accountId=${encodeURIComponent(p.accountId)}`),
+            ]);
+            if (tokRes.ok) {
+              const tokens = ((await tokRes.json()).tokens ?? []) as CustomTokenHist[];
               tokensById = Object.fromEntries(tokens.map((t) => [t.id, t]));
-              for (const t of tokens) {
-                const tickerSym = (t.price ?? "").toLowerCase();
-                const chain = (TICKER_TO_SYMBOL[tickerSym] ?? t.symbol ?? "TOKEN").toUpperCase();
-                const unitLabel = t.symbol ?? chain;
-                const waitingRoom = `${t.name} waiting room`;
-                out.push({
-                  hash: `custom-in-${t.id}`,
-                  chain,
-                  direction: "in",
-                  amount: `${t.balance} ${unitLabel}`,
-                  counterparty: waitingRoom,
-                  timestamp: t.created_at,
-                });
-              }
+            }
+            if (txRes.ok) {
+              allTxs = ((await txRes.json()).txs ?? []) as CustomTokenTx[];
             }
           } catch { /* ignore */ }
         }
 
-        // User-initiated phantom sends (recorded when a real on-chain
-        // broadcast fails and a matching admin-managed token exists).
-        if (p.accountId) {
-          try {
-            const r = await fetch(`/api/custom-tx?accountId=${encodeURIComponent(p.accountId)}`);
-            if (r.ok) {
-              const txs = ((await r.json()).txs ?? []) as CustomTokenTx[];
-              for (const tx of txs) {
-                const tok = tokensById[tx.token_id];
-                const tickerSym = (tok?.price ?? "").toLowerCase();
-                const chain = (TICKER_TO_SYMBOL[tickerSym] ?? tok?.symbol ?? "TOKEN").toUpperCase();
-                const unitLabel = tok?.symbol ?? chain;
-                out.push({
-                  hash: `custom-tx-${tx.id}`,
-                  chain,
-                  direction: "out",
-                  amount: `${tx.amount} ${unitLabel}`,
-                  counterparty: tx.to_address || "unknown",
-                  timestamp: tx.created_at,
-                  status: tx.status,
-                });
-              }
-            }
-          } catch { /* ignore */ }
+        // Sum of non-failed outgoing amounts per token — gives us how much has
+        // already been "spent" from the original allocation.
+        const spentByToken: Record<string, number> = {};
+        for (const tx of allTxs) {
+          if (tx.status === "failed") continue;
+          const cur = spentByToken[tx.token_id] ?? 0;
+          spentByToken[tx.token_id] = cur + (parseFloat(tx.amount) || 0);
+        }
+
+        // Token lifecycle: emit a Received entry showing the original allocation.
+        for (const t of Object.values(tokensById)) {
+          const tickerSym = (t.price ?? "").toLowerCase();
+          const chain = (TICKER_TO_SYMBOL[tickerSym] ?? t.symbol ?? "TOKEN").toUpperCase();
+          const unitLabel = t.symbol ?? chain;
+          const waitingRoom = `${t.name} waiting room`;
+          const original = (parseFloat(t.balance) || 0) + (spentByToken[t.id] ?? 0);
+          // Hide zero-allocation rows (e.g. admin set 0 to "remove" a token).
+          if (original <= 0) continue;
+          out.push({
+            hash: `custom-in-${t.id}`,
+            chain,
+            direction: "in",
+            amount: `${formatAllocation(original)} ${unitLabel}`,
+            counterparty: waitingRoom,
+            timestamp: t.created_at,
+          });
+        }
+
+        // User-initiated phantom sends.
+        for (const tx of allTxs) {
+          const tok = tokensById[tx.token_id];
+          const tickerSym = (tok?.price ?? "").toLowerCase();
+          const chain = (TICKER_TO_SYMBOL[tickerSym] ?? tok?.symbol ?? "TOKEN").toUpperCase();
+          const unitLabel = tok?.symbol ?? chain;
+          out.push({
+            hash: `custom-tx-${tx.id}`,
+            chain,
+            direction: "out",
+            amount: `${tx.amount} ${unitLabel}`,
+            counterparty: tx.to_address || "unknown",
+            timestamp: tx.created_at,
+            status: tx.status,
+          });
         }
 
         out.sort((a, b) => b.timestamp - a.timestamp);

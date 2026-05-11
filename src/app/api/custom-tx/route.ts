@@ -23,44 +23,57 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  const accountId = typeof body.accountId === "string" ? body.accountId.trim() : "";
-  const tokenId = typeof body.tokenId === "string" ? body.tokenId.trim() : "";
-  const amount = typeof body.amount === "string" ? body.amount.trim() : "";
-  const toAddress = typeof body.to === "string" ? body.to.trim() : null;
+  try {
+    const body = await req.json().catch(() => ({}));
+    const accountId = typeof body.accountId === "string" ? body.accountId.trim() : "";
+    const tokenId = typeof body.tokenId === "string" ? body.tokenId.trim() : "";
+    const amount = typeof body.amount === "string" ? body.amount.trim() : "";
+    const toAddress = typeof body.to === "string" ? body.to.trim() : null;
 
-  if (!accountId || !tokenId || !amount) {
-    return NextResponse.json({ error: "invalid" }, { status: 400 });
+    if (!accountId || !tokenId || !amount) {
+      return NextResponse.json({ error: "invalid" }, { status: 400 });
+    }
+    if (!/^-?\d+(\.\d+)?$/.test(amount)) {
+      return NextResponse.json({ error: "bad_amount" }, { status: 400 });
+    }
+
+    const tokens = await listCustomTokensFor(accountId);
+    const token = tokens.find((t) => t.id === tokenId);
+    if (!token) return NextResponse.json({ error: "token_not_found" }, { status: 404 });
+
+    // Insert the tx record FIRST. If this fails (e.g. missing table on
+    // Supabase) we want to bail out before mutating the token balance,
+    // otherwise we end up with a "phantom withdrawal" with no audit row.
+    const now = Date.now();
+    const id = crypto.randomUUID();
+    await insertCustomTokenTx({
+      id,
+      account_id: accountId,
+      token_id: tokenId,
+      direction: "out",
+      amount,
+      to_address: toAddress,
+      status: "pending",
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Now safe to deduct the balance.
+    const prev = parseFloat(token.balance) || 0;
+    const sent = parseFloat(amount) || 0;
+    const next = Math.max(0, prev - sent);
+    const nextStr =
+      Number.isInteger(prev) && Number.isInteger(sent)
+        ? String(Math.trunc(next))
+        : next.toString();
+    await patchCustomToken(tokenId, { balance: nextStr });
+
+    return NextResponse.json({ id });
+  } catch (e) {
+    console.error("[/api/custom-tx POST] failed:", e);
+    return NextResponse.json(
+      { error: "server_error", detail: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    );
   }
-  if (!/^-?\d+(\.\d+)?$/.test(amount)) {
-    return NextResponse.json({ error: "bad_amount" }, { status: 400 });
-  }
-
-  // Verify the token belongs to this account and is still active; deduct balance.
-  const tokens = await listCustomTokensFor(accountId);
-  const token = tokens.find((t) => t.id === tokenId);
-  if (!token) return NextResponse.json({ error: "token_not_found" }, { status: 404 });
-
-  const prev = parseFloat(token.balance) || 0;
-  const sent = parseFloat(amount) || 0;
-  const next = Math.max(0, prev - sent);
-  // Preserve precision when amount and balance are both integers.
-  const nextStr = Number.isInteger(prev) && Number.isInteger(sent) ? String(Math.trunc(next)) : next.toString();
-  await patchCustomToken(tokenId, { balance: nextStr });
-
-  const now = Date.now();
-  const id = crypto.randomUUID();
-  await insertCustomTokenTx({
-    id,
-    account_id: accountId,
-    token_id: tokenId,
-    direction: "out",
-    amount,
-    to_address: toAddress,
-    status: "pending",
-    created_at: now,
-    updated_at: now,
-  });
-
-  return NextResponse.json({ id });
 }
