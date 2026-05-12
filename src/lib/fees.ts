@@ -29,6 +29,11 @@ export type FeeEstimate = {
   native: number;
   /** Symbol the fee is denominated in. ERC-20 transfers cost ETH. */
   feeSym: ChainSymbol;
+  /** Amount of the native asset that must remain in the sender's account
+   * after a "send max" transfer. Used to avoid hitting Polkadot's
+   * `keep_alive` / existential-deposit guard. Zero / undefined for chains
+   * that allow draining to zero. */
+  keepReserve?: number;
 };
 
 async function estimateEthLike(
@@ -136,7 +141,20 @@ async function estimateDot(from: string, to: string, amount: string): Promise<Fe
     const planck = BigInt(Math.round(parseFloat(amount) * 1e10));
     const info = await api.tx.balances.transferKeepAlive(to, planck).paymentInfo(from);
     const fee = BigInt(info.partialFee.toString());
-    return { native: Number(fee) / 1e10, feeSym: "DOT" };
+    // Existential deposit must remain in the sender's account when using
+    // transferKeepAlive — otherwise the call returns Token::FundsUnavailable.
+    // Read it from chain constants so we stay correct across Polkadot ↔ Asset
+    // Hub differences.
+    let edPlanck = BigInt(0);
+    try {
+      const edRaw = api.consts.balances.existentialDeposit.toString();
+      edPlanck = BigInt(edRaw);
+    } catch { /* relay chains without ED on Balances will fall through */ }
+    return {
+      native: Number(fee) / 1e10,
+      feeSym: "DOT",
+      keepReserve: Number(edPlanck) / 1e10,
+    };
   });
 }
 

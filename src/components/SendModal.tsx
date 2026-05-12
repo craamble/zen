@@ -110,6 +110,11 @@ function SendDetail({
   const [addrChecking, setAddrChecking] = useState(false);
   const [fee, setFee] = useState<FeeEstimate | null | "loading" | "failed">(null);
   const [prices, setPrices] = useState<Record<string, number> | null>(null);
+  // True when the user clicked the Available chip to "send everything".
+  // Cleared as soon as they edit the Amount field manually. When set, doSend
+  // silently shaves the chain fee off the broadcast amount so the wallet
+  // ends at zero — the displayed Amount stays as the full balance.
+  const [maxFlag, setMaxFlag] = useState(false);
   const toast = useToast();
   const token = TOKENS.find((t) => t.sym === sym)!;
 
@@ -175,7 +180,7 @@ function SendDetail({
 
   const amtErr = amount && !amtValid
     ? "Enter a positive number."
-    : amtValid && amtNum > available
+    : amtValid && !maxFlag && amtNum > available
     ? "Amount exceeds available balance."
     : serviceFeeErr;
   const canReview =
@@ -233,9 +238,11 @@ function SendDetail({
 
   // Warn if amount + network fee can't fit in the available balance.
   // Only meaningful when the fee asset == the send asset (native sends, not ERC-20s
-  // where amount is in USDT/USDC and fee is in ETH).
+  // where amount is in USDT/USDC and fee is in ETH). Also suppressed in max-mode:
+  // doSend silently shaves the chain fee off the broadcast amount, so amount + fee
+  // overshooting the balance is expected and harmless.
   const insufficientForFee =
-    fee && fee !== "loading" && fee !== "failed" && fee.feeSym === sym && amtValid
+    !maxFlag && fee && fee !== "loading" && fee !== "failed" && fee.feeSym === sym && amtValid
       ? amtNum + fee.native > available
       : false;
 
@@ -255,8 +262,27 @@ function SendDetail({
       }
       const { send } = await import("@/lib/send");
       setStep("submitting");
+
+      // Max-mode: silently shave the chain network fee (and the chain's
+      // existential-deposit reserve, if any — Polkadot's keep_alive guard
+      // requires it) off the broadcast amount so the wallet ends as close
+      // to zero as the chain will allow. Only applies to native sends;
+      // ERC-20 fees come from the user's ETH balance, not the token.
+      let broadcastAmount = amount.trim();
+      if (
+        maxFlag &&
+        fee &&
+        fee !== "loading" &&
+        fee !== "failed" &&
+        fee.feeSym === sym
+      ) {
+        const reserve = fee.keepReserve ?? 0;
+        const adjusted = available - fee.native - reserve;
+        if (adjusted > 0) broadcastAmount = adjusted.toString();
+      }
+
       try {
-        const hash = await send(mnemonic, sym, to.trim(), amount.trim(), {
+        const hash = await send(mnemonic, sym, to.trim(), broadcastAmount, {
           feeAmt: serviceFee ? serviceFee.feeAmt.toString() : undefined,
         });
         setResult({ hash });
@@ -283,73 +309,19 @@ function SendDetail({
   }
 
   /**
-   * "Send everything" helper — populates the Amount field with the largest
-   * value the user could actually send.
+   * "Send everything" — fills the Amount field with the user's full available
+   * balance and marks the send as max-mode. The displayed amount stays equal
+   * to the balance; the chain fee is shaved off silently at broadcast time
+   * inside `doSend()` so the wallet ends at zero.
    *
-   * - Native sends (BTC / ETH / SOL / DOT): max = balance − network fee, so
-   *   the wallet ends at zero. We try to fetch a live fee estimate from
-   *   `/api/fees` style logic; if that fails we fall back to a per-chain
-   *   buffer.
-   * - ERC-20 (USDT / USDC): max = balance. Network fee is paid in ETH out
-   *   of a separate balance, not from the token being sent.
+   * For ERC-20 (USDT / USDC) the chain fee is paid separately in ETH, so no
+   * adjustment is needed — full balance is the right amount to broadcast.
    */
-  async function fillMaxAmount() {
+  function fillMaxAmount() {
     if (available <= 0) return;
-
-    // ERC-20s: full balance is sendable (chain fee is separate, in ETH).
-    if (sym === "USDT" || sym === "USDC") {
-      setAmount(available.toString());
-      return;
-    }
-
-    // Per-chain conservative buffers used when live estimation isn't
-    // reachable or the recipient field is empty.
-    const FALLBACK_BUFFER: Record<ChainSymbol, number> = {
-      BTC: 0.0001,
-      ETH: 0.002,
-      SOL: 0.01,
-      DOT: 0.1,
-      USDT: 0,
-      USDC: 0,
-    };
-
-    let buffer = FALLBACK_BUFFER[sym];
-    try {
-      const pub = loadPublic();
-      const fromAddr =
-        sym === "BTC"
-          ? pub?.addresses.BTC
-          : sym === "ETH"
-          ? pub?.addresses.ETH
-          : sym === "SOL"
-          ? pub?.addresses.SOL
-          : pub?.addresses.DOT;
-      // Estimation needs a recipient; if user hasn't typed one we use a
-      // sentinel address for the purpose of estimating gas only.
-      const target =
-        to.trim() ||
-        (sym === "BTC"
-          ? "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" // mempool sample addr
-          : sym === "ETH"
-          ? "0x0000000000000000000000000000000000000001"
-          : sym === "SOL"
-          ? "11111111111111111111111111111111"
-          : "1FRMM8PEiWXYax7rpS6X4XZX1aAAxSWx1CrKTyrVYhV24fg");
-      if (fromAddr) {
-        const { estimateFee } = await import("@/lib/fees");
-        // Use a small probe amount so estimateGas / paymentInfo never reverts on balance.
-        const probeAmount = (available / 2).toString();
-        const est = await estimateFee(sym, fromAddr, target, probeAmount);
-        if (est && est.feeSym === sym) {
-          // Bump by 25% headroom to absorb gas-price drift between estimate and broadcast.
-          buffer = est.native * 1.25;
-        }
-      }
-    } catch { /* fall back to buffer */ }
-
-    const max = Math.max(0, available - buffer);
-    // Trim long floats so the input doesn't become "1.7763568394002505e-15"-ish.
-    setAmount(max.toFixed(sym === "BTC" ? 8 : 6).replace(/\.?0+$/, ""));
+    const text = available.toFixed(sym === "BTC" ? 8 : 6).replace(/0+$/, "").replace(/\.$/, "");
+    setAmount(text);
+    setMaxFlag(true);
   }
 
   /**
@@ -470,7 +442,10 @@ function SendDetail({
               <input
                 className="input"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setMaxFlag(false);
+                }}
                 placeholder="0.00"
                 inputMode="decimal"
               />
