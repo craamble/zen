@@ -49,8 +49,15 @@ export async function getBtcBalance(address: string): Promise<number> {
     const r = await fetch(`${BTC_API}/address/${address}`, { cache: "no-store" });
     if (!r.ok) throw new Error(`btc ${r.status}`);
     const d = await r.json();
-    const sats = (d.chain_stats?.funded_txo_sum ?? 0) - (d.chain_stats?.spent_txo_sum ?? 0);
-    return sats / 1e8;
+    // Include mempool stats so a pending outgoing tx (waiting on confirmation)
+    // is immediately reflected in the displayed balance. Otherwise the user
+    // sees their pre-send balance for ~10–60 minutes and can mistakenly try
+    // a second send that can't broadcast because the UTXOs are already spent.
+    const confirmedNet =
+      (d.chain_stats?.funded_txo_sum ?? 0) - (d.chain_stats?.spent_txo_sum ?? 0);
+    const mempoolNet =
+      (d.mempool_stats?.funded_txo_sum ?? 0) - (d.mempool_stats?.spent_txo_sum ?? 0);
+    return (confirmedNet + mempoolNet) / 1e8;
   });
 }
 

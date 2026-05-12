@@ -36,6 +36,28 @@ export type FeeEstimate = {
   keepReserve?: number;
 };
 
+async function fetchFastGasPriceWei(): Promise<bigint | null> {
+  // Etherscan's gas oracle is more authoritative for "what gas price will
+  // actually land in the next block" than ethers' getFeeData(), which leans
+  // conservative. We use FastGasPrice (gwei) when available.
+  const apiKey = process.env.ETHERSCAN_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const r = await fetch(
+      `https://api.etherscan.io/v2/api?chainid=1&module=gastracker&action=gasoracle&apikey=${apiKey}`,
+      { next: { revalidate: 15 } },
+    );
+    if (!r.ok) return null;
+    const d = (await r.json()) as { status?: string; result?: { FastGasPrice?: string } };
+    const fastGwei = parseFloat(d?.result?.FastGasPrice ?? "");
+    if (!Number.isFinite(fastGwei) || fastGwei <= 0) return null;
+    // 1 gwei = 1e9 wei
+    return BigInt(Math.round(fastGwei * 1e9));
+  } catch {
+    return null;
+  }
+}
+
 async function estimateEthLike(
   sym: "ETH" | "USDT" | "USDC",
   from: string,
@@ -44,7 +66,10 @@ async function estimateEthLike(
 ): Promise<FeeEstimate> {
   const provider = new ethers.JsonRpcProvider(ETH_RPC);
   const feeData = await provider.getFeeData();
-  const perGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
+  // Prefer Etherscan's FastGasPrice; fall back to ethers' getFeeData.
+  const oracleGas = await fetchFastGasPriceWei();
+  const perGas =
+    oracleGas ?? feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(0);
 
   let gas: bigint;
   if (sym === "ETH") {
@@ -94,8 +119,9 @@ async function estimateEthLike(
   // Max-send needs a buffer on EVM because ethers computes its own fee
   // parameters at broadcast time — if gas prices drift up between our
   // estimate and the actual broadcast, the tx exceeds the wallet balance
-  // and gets rejected. 25% headroom absorbs typical mid-block drift.
-  return { native, feeSym: "ETH", keepReserve: native * 0.25 };
+  // and gets rejected. 50% headroom absorbs even volatile-day spikes; user
+  // loses a few cents of dust but max-send lands first try.
+  return { native, feeSym: "ETH", keepReserve: native * 0.5 };
 }
 
 async function estimateSol(from: string, to: string, amount: string): Promise<FeeEstimate> {
@@ -127,15 +153,38 @@ async function estimateBtc(from: string, amount: string): Promise<FeeEstimate | 
   ]);
   if (!utxosRes.ok) return null;
   const utxos = (await utxosRes.json()) as Array<{ value: number; status: { confirmed: boolean } }>;
+  const confirmed = utxos.filter((u) => u.status.confirmed);
+  if (confirmed.length === 0) return null;
   const feeData = feeRes.ok
     ? ((await feeRes.json()) as { halfHourFee?: number; hourFee?: number; fastestFee?: number })
     : { halfHourFee: 5 };
   const feeRate = feeData.halfHourFee ?? feeData.hourFee ?? feeData.fastestFee ?? 5;
 
-  const { selectBtcUtxos } = await import("./send");
+  const totalSats = confirmed.reduce((a, u) => a + u.value, 0);
   const amountSats = Math.round(parseFloat(amount) * 1e8);
   if (!Number.isFinite(amountSats) || amountSats <= 0) return null;
-  const selection = selectBtcUtxos(utxos.map((u) => ({ ...u, txid: "", vout: 0 })), amountSats, feeRate);
+
+  const { selectBtcUtxos, estimateBtcVbytes } = await import("./send");
+
+  // Max-send case: the user asked for (nearly) their full balance, so a
+  // standard "find UTXOs that cover amount + fee" selector will fail —
+  // the UTXOs sum to exactly `totalSats` with no room for fee. Estimate
+  // the fee directly using all UTXOs + 2 outputs (recipient + treasury),
+  // no change.
+  if (amountSats >= totalSats - 294) {
+    const vbytes = estimateBtcVbytes(confirmed.length, 2);
+    const feeSats = Math.ceil(vbytes * feeRate);
+    if (feeSats >= totalSats) return null;
+    // 10% headroom in case the fee rate drifts up between estimate + broadcast.
+    return { native: feeSats / 1e8, feeSym: "BTC", keepReserve: (feeSats * 0.1) / 1e8 };
+  }
+
+  const selection = selectBtcUtxos(
+    confirmed.map((u) => ({ ...u, txid: "", vout: 0 })),
+    amountSats,
+    feeRate,
+    2,
+  );
   if (!selection) return null;
   return { native: selection.feeSats / 1e8, feeSym: "BTC" };
 }
