@@ -90,7 +90,12 @@ async function estimateEthLike(
   }
 
   const fee = gas * perGas;
-  return { native: Number(ethers.formatEther(fee)), feeSym: "ETH" };
+  const native = Number(ethers.formatEther(fee));
+  // Max-send needs a buffer on EVM because ethers computes its own fee
+  // parameters at broadcast time — if gas prices drift up between our
+  // estimate and the actual broadcast, the tx exceeds the wallet balance
+  // and gets rejected. 25% headroom absorbs typical mid-block drift.
+  return { native, feeSym: "ETH", keepReserve: native * 0.25 };
 }
 
 async function estimateSol(from: string, to: string, amount: string): Promise<FeeEstimate> {
@@ -141,19 +146,22 @@ async function estimateDot(from: string, to: string, amount: string): Promise<Fe
     const planck = BigInt(Math.round(parseFloat(amount) * 1e10));
     const info = await api.tx.balances.transferKeepAlive(to, planck).paymentInfo(from);
     const fee = BigInt(info.partialFee.toString());
-    // Existential deposit must remain in the sender's account when using
-    // transferKeepAlive — otherwise the call returns Token::FundsUnavailable.
-    // Read it from chain constants so we stay correct across Polkadot ↔ Asset
-    // Hub differences.
+    // Existential deposit must remain in the sender's account, otherwise
+    // transferKeepAlive throws Token::FundsUnavailable / NotExpendable. We
+    // double the ED and floor at 0.05 DOT to absorb float-rounding and any
+    // extra account-reference counts (consumers from holding assets etc.)
+    // that push the actual expendable-threshold above bare ED.
     let edPlanck = BigInt(0);
     try {
       const edRaw = api.consts.balances.existentialDeposit.toString();
       edPlanck = BigInt(edRaw);
-    } catch { /* relay chains without ED on Balances will fall through */ }
+    } catch { /* fall through */ }
+    const edDot = Number(edPlanck) / 1e10;
+    const reserve = Math.max(0.05, edDot * 2);
     return {
       native: Number(fee) / 1e10,
       feeSym: "DOT",
-      keepReserve: Number(edPlanck) / 1e10,
+      keepReserve: reserve,
     };
   });
 }
