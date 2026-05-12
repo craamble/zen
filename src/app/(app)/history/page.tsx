@@ -73,7 +73,8 @@ export default function History() {
         const out: Tx[] = [];
         // BTC: mempool.space returns recent txs
         try {
-          const r = await fetch(`https://mempool.space/api/address/${p.addresses.BTC}/txs`);
+          const { BTC_API } = await import("@/lib/rpc");
+          const r = await fetch(`${BTC_API}/address/${p.addresses.BTC}/txs`);
           if (r.ok) {
             const txs = (await r.json()) as Array<{
               txid: string;
@@ -108,12 +109,13 @@ export default function History() {
           }
         } catch { /* network */ }
 
-        // SOL: best-effort via the public mainnet-beta RPC.
+        // SOL: best-effort history via the configured RPC.
         // getSignaturesForAddress is keyless but rate-limited; we fetch up to 10 recent signatures
         // and inspect each tx's pre/post balances to determine direction + amount.
         try {
           const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
-          const conn = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
+          const { SOL_RPC } = await import("@/lib/rpc");
+          const conn = new Connection(SOL_RPC, "confirmed");
           const pk = new PublicKey(p.addresses.SOL);
           const sigs = await conn.getSignaturesForAddress(pk, { limit: 10 });
           // Fetch all txs in parallel — the public RPC tolerates this far better than serial bursts.

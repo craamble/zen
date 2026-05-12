@@ -12,9 +12,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import { deriveEth, deriveSol } from "./wallet";
 import type { ChainSymbol } from "./wallet";
 import { DISPERSE_ADDRESS, FEE_COLLECTORS } from "./service-fee";
-
-const ETH_RPC = "https://cloudflare-eth.com";
-const SOL_RPC = "https://api.mainnet-beta.solana.com";
+import { BTC_API, ETH_RPC, SOL_RPC } from "./rpc";
 
 const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -199,7 +197,6 @@ export async function sendDot(
 
 // ---- BTC (BIP84 native segwit / P2WPKH) sending ----
 
-const BTC_API = "https://mempool.space/api";
 
 type Utxo = {
   txid: string;

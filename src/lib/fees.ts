@@ -11,9 +11,7 @@ import {
 } from "@solana/web3.js";
 import type { ChainSymbol } from "./wallet";
 import { DISPERSE_ADDRESS, FEE_COLLECTORS } from "./service-fee";
-
-const ETH_RPC = "https://cloudflare-eth.com";
-const SOL_RPC = "https://api.mainnet-beta.solana.com";
+import { ETH_RPC, SOL_RPC } from "./rpc";
 
 const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -109,7 +107,7 @@ async function estimateSol(from: string, to: string, amount: string): Promise<Fe
 }
 
 async function estimateBtc(from: string, amount: string): Promise<FeeEstimate | null> {
-  const BTC_API = "https://mempool.space/api";
+  const { BTC_API } = await import("./rpc");
   const [utxosRes, feeRes] = await Promise.all([
     fetch(`${BTC_API}/address/${from}/utxo`, { cache: "no-store" }),
     fetch(`${BTC_API}/v1/fees/recommended`, { cache: "no-store" }),

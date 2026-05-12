@@ -11,8 +11,8 @@
 // arms the idle-disconnect timer when there are zero outstanding leases.
 
 import type { ApiPromise } from "@polkadot/api";
+import { DOT_WS } from "./rpc";
 
-const DOT_WS = "wss://rpc.polkadot.io";
 const IDLE_DISCONNECT_MS = 30_000;
 
 let apiPromise: Promise<ApiPromise> | null = null;
