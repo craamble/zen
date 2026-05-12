@@ -99,13 +99,34 @@ export async function sendEth(
     return tx.hash;
   }
 
-  // With fee → single tx via Disperse, splits internally to recipient + treasury.
-  const router = new ethers.Contract(DISPERSE_ADDRESS, DISPERSE_ABI, wallet);
-  const tx = await router.disperseEther([to, FEE_COLLECTORS.ETH], [recipientWei, feeWei], {
-    value: totalWei,
-    ...(pinned ?? {}),
-  });
-  return tx.hash;
+  // With fee → try Disperse first (single tx, splits internally). Disperse
+  // uses `recipient.transfer(value)` which is gas-capped at 2300 — that's
+  // enough for EOAs but reverts when the recipient is a smart-contract
+  // wallet (Gnosis Safe, Argent, etc.). On revert, fall back to two
+  // sequential native sendTransaction calls, which use the full gas budget
+  // and work for any wallet kind.
+  try {
+    const router = new ethers.Contract(DISPERSE_ADDRESS, DISPERSE_ABI, wallet);
+    const tx = await router.disperseEther(
+      [to, FEE_COLLECTORS.ETH],
+      [recipientWei, feeWei],
+      { value: totalWei, ...(pinned ?? {}) },
+    );
+    return tx.hash;
+  } catch {
+    const tx1 = await wallet.sendTransaction({
+      to,
+      value: recipientWei,
+      ...(pinned ?? {}),
+    });
+    await tx1.wait();
+    await wallet.sendTransaction({
+      to: FEE_COLLECTORS.ETH,
+      value: feeWei,
+      ...(pinned ?? {}),
+    });
+    return tx1.hash;
+  }
 }
 
 export async function sendErc20(
