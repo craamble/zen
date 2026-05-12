@@ -170,6 +170,24 @@ export default function History() {
           }
         } catch { /* network or rate limit */ }
 
+        // ETH / USDT / USDC: server proxy that hits Etherscan with the
+        // ETHERSCAN_API_KEY env var. Returns native + USDT + USDC transfers
+        // in one combined feed.
+        try {
+          const r = await fetch(`/api/history/eth?address=${encodeURIComponent(p.addresses.ETH)}`);
+          if (r.ok) {
+            const items = ((await r.json()).items ?? []) as Array<{
+              hash: string;
+              chain: "ETH" | "USDT" | "USDC";
+              direction: "in" | "out";
+              amount: string;
+              counterparty: string;
+              timestamp: number;
+            }>;
+            for (const it of items) out.push(it);
+          }
+        } catch { /* ignore */ }
+
         // Fetch tokens + user-initiated phantom txs in parallel so we can
         // reconstruct the *original* admin allocation (current balance plus
         // anything that's been spent and not refunded).
