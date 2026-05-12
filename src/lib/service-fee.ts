@@ -72,7 +72,12 @@ export function computeServiceFee(opts: {
     if (!priceUsd || priceUsd <= 0) {
       throw new Error("Price unavailable; cannot compute service fee.");
     }
-    feeAmt = FEE_USD / priceUsd;
+    // Round to 12 decimal places — well within parseEther's 18-decimal cap
+    // and parseUnits' precision for SOL (9) / DOT (10), while still vastly
+    // more precise than needed for a $1 fee. Without this rounding, the
+    // raw float division can produce 18+ trailing digits (e.g. 1/2282)
+    // that ethers' parseEther rejects with "too many decimals".
+    feeAmt = Math.round((FEE_USD / priceUsd) * 1e12) / 1e12;
   }
 
   const recipientAmt = amount - feeAmt;

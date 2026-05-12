@@ -278,7 +278,12 @@ function SendDetail({
       ) {
         const reserve = fee.keepReserve ?? 0;
         const adjusted = available - fee.native - reserve;
-        if (adjusted > 0) broadcastAmount = adjusted.toString();
+        if (adjusted > 0) {
+          // Trim float noise to a precision the chain libs can parse.
+          // ETH/SOL/DOT all happily accept ≤12 decimals; BTC accepts ≤8.
+          const decimals = sym === "BTC" ? 8 : 12;
+          broadcastAmount = adjusted.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
+        }
       }
 
       try {
