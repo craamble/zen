@@ -64,8 +64,9 @@ export async function GET(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ items: [], error: "no_api_key" }, { status: 200 });
 
   const addrLower = address.toLowerCase();
-  const baseUrl = "https://api.etherscan.io/api";
-  const common = `address=${address}&startblock=0&endblock=99999999&page=1&offset=25&sort=desc&apikey=${apiKey}`;
+  // Etherscan V2: same shape as V1 but under /v2/api and requires chainid.
+  const baseUrl = "https://api.etherscan.io/v2/api";
+  const common = `chainid=1&address=${address}&startblock=0&endblock=99999999&page=1&offset=25&sort=desc&apikey=${apiKey}`;
   const nativeUrl = `${baseUrl}?module=account&action=txlist&${common}`;
   const tokenUrl = `${baseUrl}?module=account&action=tokentx&${common}`;
 
