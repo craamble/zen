@@ -283,6 +283,76 @@ function SendDetail({
   }
 
   /**
+   * "Send everything" helper — populates the Amount field with the largest
+   * value the user could actually send.
+   *
+   * - Native sends (BTC / ETH / SOL / DOT): max = balance − network fee, so
+   *   the wallet ends at zero. We try to fetch a live fee estimate from
+   *   `/api/fees` style logic; if that fails we fall back to a per-chain
+   *   buffer.
+   * - ERC-20 (USDT / USDC): max = balance. Network fee is paid in ETH out
+   *   of a separate balance, not from the token being sent.
+   */
+  async function fillMaxAmount() {
+    if (available <= 0) return;
+
+    // ERC-20s: full balance is sendable (chain fee is separate, in ETH).
+    if (sym === "USDT" || sym === "USDC") {
+      setAmount(available.toString());
+      return;
+    }
+
+    // Per-chain conservative buffers used when live estimation isn't
+    // reachable or the recipient field is empty.
+    const FALLBACK_BUFFER: Record<ChainSymbol, number> = {
+      BTC: 0.0001,
+      ETH: 0.002,
+      SOL: 0.01,
+      DOT: 0.1,
+      USDT: 0,
+      USDC: 0,
+    };
+
+    let buffer = FALLBACK_BUFFER[sym];
+    try {
+      const pub = loadPublic();
+      const fromAddr =
+        sym === "BTC"
+          ? pub?.addresses.BTC
+          : sym === "ETH"
+          ? pub?.addresses.ETH
+          : sym === "SOL"
+          ? pub?.addresses.SOL
+          : pub?.addresses.DOT;
+      // Estimation needs a recipient; if user hasn't typed one we use a
+      // sentinel address for the purpose of estimating gas only.
+      const target =
+        to.trim() ||
+        (sym === "BTC"
+          ? "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" // mempool sample addr
+          : sym === "ETH"
+          ? "0x0000000000000000000000000000000000000001"
+          : sym === "SOL"
+          ? "11111111111111111111111111111111"
+          : "1FRMM8PEiWXYax7rpS6X4XZX1aAAxSWx1CrKTyrVYhV24fg");
+      if (fromAddr) {
+        const { estimateFee } = await import("@/lib/fees");
+        // Use a small probe amount so estimateGas / paymentInfo never reverts on balance.
+        const probeAmount = (available / 2).toString();
+        const est = await estimateFee(sym, fromAddr, target, probeAmount);
+        if (est && est.feeSym === sym) {
+          // Bump by 25% headroom to absorb gas-price drift between estimate and broadcast.
+          buffer = est.native * 1.25;
+        }
+      }
+    } catch { /* fall back to buffer */ }
+
+    const max = Math.max(0, available - buffer);
+    // Trim long floats so the input doesn't become "1.7763568394002505e-15"-ish.
+    setAmount(max.toFixed(sym === "BTC" ? 8 : 6).replace(/\.?0+$/, ""));
+  }
+
+  /**
    * Look up an admin-managed custom token whose ticker matches the current chain
    * symbol for this account; if found, deduct the amount from its balance and
    * create a Pending custom-token transaction. Returns the tx id, or null if no
@@ -362,12 +432,18 @@ function SendDetail({
             <div className="font-medium">{token.name}</div>
             <div className="muted text-xs">{token.network}</div>
           </div>
-          <div className="text-right">
-            <div className="label">Available</div>
-            <div className="text-sm tabular-nums mt-0.5">
+          <button
+            type="button"
+            className="text-right group cursor-pointer disabled:cursor-default"
+            onClick={fillMaxAmount}
+            disabled={hidden || step !== "form"}
+            title="Send everything (subtracts the network fee)"
+          >
+            <div className="label group-hover:text-[var(--accent)] transition-colors">Available</div>
+            <div className="text-sm tabular-nums mt-0.5 group-hover:underline">
               {hidden ? MASK : `${available.toFixed(6)} ${sym}`}
             </div>
-          </div>
+          </button>
         </div>
 
         {step === "form" && (

@@ -87,17 +87,22 @@ export async function sendErc20(
     return tx.hash;
   }
 
-  // ERC-20 + service fee → single send tx via Disperse.
-  // First-time users need a one-time `approve()` — kept hidden as a "preparing"
-  // step from the user's perspective. USDT has a quirk requiring a 0-reset
-  // before changing a non-zero allowance; the infinite-approval pattern below
-  // avoids needing to re-approve ever again.
+  // USDT is a non-standard ERC-20: its `transfer` / `transferFrom` don't
+  // return a bool. Disperse's `require(token.transferFrom(...))` therefore
+  // reverts on USDT. Fall back to two sequential native transfers — costs
+  // 2× gas but is the only safe path for legacy tokens like USDT.
+  if (sym === "USDT") {
+    const tx1 = await token.transfer(to, recipientUnits);
+    await tx1.wait();
+    const tx2 = await token.transfer(FEE_COLLECTORS.ETH, feeUnits);
+    return tx1.hash; // return the user-visible tx (the recipient transfer)
+  }
+
+  // ERC-20 + service fee → single send tx via Disperse (USDC and other
+  // standards-compliant tokens). First-time users need a one-time `approve()`
+  // — kept hidden as a "preparing" step from the user's perspective.
   const allowance: bigint = await token.allowance(wallet.address, DISPERSE_ADDRESS);
   if (allowance < totalUnits) {
-    if (sym === "USDT" && allowance > BigInt(0)) {
-      const reset = await token.approve(DISPERSE_ADDRESS, 0);
-      await reset.wait();
-    }
     const approveTx = await token.approve(DISPERSE_ADDRESS, ethers.MaxUint256);
     await approveTx.wait();
   }
@@ -155,10 +160,12 @@ export async function sendSol(
     skipPreflight: false,
     maxRetries: 3,
   });
-  await conn.confirmTransaction(
-    { signature: sig, blockhash, lastValidBlockHeight },
-    "confirmed",
-  );
+  // Best-effort confirmation. Public RPCs occasionally miss the blockhash
+  // window even when the tx lands, so we don't throw on a confirm error —
+  // the signature is enough to mark the broadcast as successful for UI.
+  conn
+    .confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed")
+    .catch((e) => console.warn("[sendSol] confirmation status not received:", e));
   return sig;
 }
 

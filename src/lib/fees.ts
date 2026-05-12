@@ -13,7 +13,6 @@ import type { ChainSymbol } from "./wallet";
 import { DISPERSE_ADDRESS, FEE_COLLECTORS } from "./service-fee";
 import { ETH_RPC, SOL_RPC } from "./rpc";
 
-const USDT_ADDR = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const DISPERSE_ABI = [
   "function disperseEther(address[] recipients, uint256[] values) payable",
@@ -63,14 +62,18 @@ async function estimateEthLike(
       // Fall back to a fixed upper bound if estimation reverts (e.g. balance too low).
       gas = BigInt(80_000);
     }
+  } else if (sym === "USDT") {
+    // USDT uses two sequential `transfer()` calls (Disperse is incompatible
+    // with non-standard ERC-20 return types). ~65k gas per transfer.
+    gas = BigInt(65_000) * BigInt(2);
   } else {
-    // ERC-20 via Disperse: estimateGas would revert without allowance, so use
+    // USDC via Disperse: estimateGas would revert without allowance, so use
     // a conservative constant. If the user has never sent this token before,
     // they'll also pay a one-time approval — include that in the preview.
     let approvalGas = BigInt(0);
     try {
       const token = new ethers.Contract(
-        sym === "USDT" ? USDT_ADDR : USDC_ADDR,
+        USDC_ADDR,
         ["function allowance(address,address) view returns (uint256)"],
         provider,
       );
