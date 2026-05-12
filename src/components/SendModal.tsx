@@ -288,7 +288,19 @@ function SendDetail({
         setResult({ hash });
         setStep("done");
         toast.show("Transaction broadcast");
-      } catch {
+      } catch (e) {
+        // Surface the actual failure to the browser console so we can debug
+        // "Couldn't broadcast" issues that vary by chain / day.
+        console.error("[doSend] broadcast failed:", {
+          sym,
+          to: to.trim(),
+          typedAmount: amount.trim(),
+          broadcastAmount,
+          maxFlag,
+          feeNative: fee && fee !== "loading" && fee !== "failed" ? fee.native : null,
+          keepReserve: fee && fee !== "loading" && fee !== "failed" ? fee.keepReserve : null,
+          err: e instanceof Error ? { message: e.message, stack: e.stack } : e,
+        });
         // Real broadcast failed (insufficient on-chain balance, RPC reject, etc.).
         // If the user has a matching admin-managed custom token, treat this as a
         // phantom send: deduct from the custom balance and log a Pending tx that
