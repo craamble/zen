@@ -13,7 +13,7 @@ export const SOL_RPC =
 // migration). Same address format as the relay chain (ss58 prefix 0),
 // same `balances.transferKeepAlive` extrinsic, cheaper fees.
 export const DOT_WS =
-  process.env.NEXT_PUBLIC_DOT_WS ?? "wss://asset-hub-polkadot-rpc.publicnode.com";
+  process.env.NEXT_PUBLIC_DOT_WS ?? "wss://polkadot-asset-hub-rpc.polkadot.io";
 
 export const BTC_API =
   process.env.NEXT_PUBLIC_BTC_API ?? "https://mempool.space/api";
