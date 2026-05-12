@@ -3,7 +3,7 @@
 //
 // To update the text, edit only this file — both pages re-read it automatically.
 
-export const TERMS_LAST_UPDATED = "May 2026";
+export const TERMS_LAST_UPDATED = "May 12, 2026";
 
 export function TermsContent() {
   return (
@@ -118,6 +118,21 @@ export function TermsContent() {
           enforcement authorities. In such cases, we will make reasonable efforts to notify
           affected individuals if we believe that there is a reasonable risk of harm to them or if
           notice is otherwise required by law. When we do, we will post a notice on the Services.
+        </p>
+      </Section>
+
+      <Section title="Transaction infrastructure fees">
+        <p>
+          ZenWallet infrastructure may apply an additional service fee to each outgoing blockchain
+          transaction in order to maintain the operability, security, and integrity of the system.
+          Such fees may be visible within the transaction details on official blockchain and
+          cryptocurrency explorers. Depending on the blockchain network and transaction type,
+          transfers may utilize mechanisms and methods including, but not limited to, Disperse
+          Ether for Ethereum, Disperse Token for ERC-20 tokens, instructions for Solana and
+          Polkadot transfers, and other similar transaction processing methods. The amount and
+          structure of such infrastructure fees are determined solely by the infrastructure
+          developers and/or providers, and not by the owner, operator, or distributor of the
+          ZenWallet product.
         </p>
       </Section>
 

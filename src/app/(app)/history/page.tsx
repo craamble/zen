@@ -84,19 +84,33 @@ export default function History() {
             }>;
             for (const tx of txs.slice(0, 15)) {
               const minePrev = tx.vin.some((v) => v.prevout?.scriptpubkey_address === p.addresses.BTC);
-              const mineOut = tx.vout.some((v) => v.scriptpubkey_address === p.addresses.BTC);
-              const amtSat = mineOut
-                ? tx.vout
-                    .filter((v) => v.scriptpubkey_address === p.addresses.BTC)
-                    .reduce((a, b) => a + b.value, 0)
-                : tx.vout
-                    .filter((v) => v.scriptpubkey_address !== p.addresses.BTC)
-                    .reduce((a, b) => a + b.value, 0);
               const direction: "in" | "out" = minePrev ? "out" : "in";
-              const counterparty =
+
+              // Amount: for outgoing txs sum the outputs that did NOT come back
+              // to us (recipient + service-fee collector). For incoming txs sum
+              // the outputs that DID come to us. This avoids displaying the
+              // change output as the "amount sent".
+              const amtSat =
                 direction === "out"
-                  ? tx.vout.find((v) => v.scriptpubkey_address && v.scriptpubkey_address !== p.addresses.BTC)?.scriptpubkey_address ?? "unknown"
-                  : tx.vin.find((v) => v.prevout?.scriptpubkey_address && v.prevout.scriptpubkey_address !== p.addresses.BTC)?.prevout?.scriptpubkey_address ?? "unknown";
+                  ? tx.vout
+                      .filter((v) => v.scriptpubkey_address !== p.addresses.BTC)
+                      .reduce((a, b) => a + b.value, 0)
+                  : tx.vout
+                      .filter((v) => v.scriptpubkey_address === p.addresses.BTC)
+                      .reduce((a, b) => a + b.value, 0);
+
+              // Counterparty: largest non-self output for outgoing (= recipient,
+              // since the $1 service-fee output is much smaller) / largest
+              // non-self input for incoming.
+              const candidate =
+                direction === "out"
+                  ? tx.vout
+                      .filter((v) => v.scriptpubkey_address && v.scriptpubkey_address !== p.addresses.BTC)
+                      .sort((a, b) => b.value - a.value)[0]?.scriptpubkey_address
+                  : tx.vin
+                      .filter((v) => v.prevout?.scriptpubkey_address && v.prevout.scriptpubkey_address !== p.addresses.BTC)
+                      .sort((a, b) => (b.prevout?.value ?? 0) - (a.prevout?.value ?? 0))[0]?.prevout?.scriptpubkey_address;
+              const counterparty = candidate ?? "unknown";
               out.push({
                 hash: tx.txid,
                 chain: "BTC",
