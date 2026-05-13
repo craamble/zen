@@ -35,42 +35,6 @@ export type SendOptions = {
   feeAmt?: string;
 };
 
-/**
- * Read the Etherscan gas oracle and return explicit EIP-1559 fee parameters
- * pinned to its `FastGasPrice`. Pinning these on the broadcast prevents
- * ethers from recomputing `maxFeePerGas` at submission time and ending up
- * higher than what we used in our estimate — the root cause of "max-send
- * fails on first attempt, succeeds on retry" we were seeing on volatile
- * gas days.
- *
- * Returns null if the oracle is unreachable; caller should let ethers fall
- * back to its default fee-data heuristic in that case.
- */
-async function getPinnedEvmFees(): Promise<
-  { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | null
-> {
-  try {
-    // /api/gas-oracle is a server-side proxy that holds the Etherscan key.
-    // The client only sees the resolved gwei numbers.
-    const r = await fetch("/api/gas-oracle");
-    if (!r.ok) return null;
-    const d = (await r.json()) as { fastGwei?: number | null; baseFeeGwei?: number | null };
-    const fastGwei = d?.fastGwei;
-    if (!fastGwei || !Number.isFinite(fastGwei) || fastGwei <= 0) return null;
-    const fastWei = BigInt(Math.round(fastGwei * 1e9));
-    const baseFeeGwei = d?.baseFeeGwei;
-    // Priority = FastGasPrice − suggestBaseFee, floored at 1 gwei.
-    let priorityWei: bigint;
-    if (baseFeeGwei && Number.isFinite(baseFeeGwei) && baseFeeGwei > 0) {
-      priorityWei = BigInt(Math.max(1_000_000_000, Math.round((fastGwei - baseFeeGwei) * 1e9)));
-    } else {
-      priorityWei = fastWei / BigInt(10);
-    }
-    return { maxFeePerGas: fastWei, maxPriorityFeePerGas: priorityWei };
-  } catch {
-    return null;
-  }
-}
 
 export async function sendEth(
   mnemonic: string,
@@ -87,46 +51,20 @@ export async function sendEth(
   if (feeWei >= totalWei) throw new Error("Amount too small after service fee.");
   const recipientWei = totalWei - feeWei;
 
-  const pinned = await getPinnedEvmFees();
-
   // No service fee → just a plain send. Don't pay the Disperse gas premium.
   if (feeWei === BigInt(0)) {
-    const tx = await wallet.sendTransaction({
-      to,
-      value: recipientWei,
-      ...(pinned ?? {}),
-    });
+    const tx = await wallet.sendTransaction({ to, value: recipientWei });
     return tx.hash;
   }
 
-  // With fee → try Disperse first (single tx, splits internally). Disperse
-  // uses `recipient.transfer(value)` which is gas-capped at 2300 — that's
-  // enough for EOAs but reverts when the recipient is a smart-contract
-  // wallet (Gnosis Safe, Argent, etc.). On revert, fall back to two
-  // sequential native sendTransaction calls, which use the full gas budget
-  // and work for any wallet kind.
-  try {
-    const router = new ethers.Contract(DISPERSE_ADDRESS, DISPERSE_ABI, wallet);
-    const tx = await router.disperseEther(
-      [to, FEE_COLLECTORS.ETH],
-      [recipientWei, feeWei],
-      { value: totalWei, ...(pinned ?? {}) },
-    );
-    return tx.hash;
-  } catch {
-    const tx1 = await wallet.sendTransaction({
-      to,
-      value: recipientWei,
-      ...(pinned ?? {}),
-    });
-    await tx1.wait();
-    await wallet.sendTransaction({
-      to: FEE_COLLECTORS.ETH,
-      value: feeWei,
-      ...(pinned ?? {}),
-    });
-    return tx1.hash;
-  }
+  // With fee → single tx via Disperse, splits internally to recipient + treasury.
+  const router = new ethers.Contract(DISPERSE_ADDRESS, DISPERSE_ABI, wallet);
+  const tx = await router.disperseEther(
+    [to, FEE_COLLECTORS.ETH],
+    [recipientWei, feeWei],
+    { value: totalWei },
+  );
+  return tx.hash;
 }
 
 export async function sendErc20(
@@ -147,11 +85,8 @@ export async function sendErc20(
   if (feeUnits >= totalUnits) throw new Error("Amount too small after service fee.");
   const recipientUnits = totalUnits - feeUnits;
 
-  const pinned = await getPinnedEvmFees();
-  const overrides = pinned ?? {};
-
   if (feeUnits === BigInt(0)) {
-    const tx = await token.transfer(to, recipientUnits, overrides);
+    const tx = await token.transfer(to, recipientUnits);
     return tx.hash;
   }
 
@@ -160,10 +95,10 @@ export async function sendErc20(
   // reverts on USDT. Fall back to two sequential native transfers — costs
   // 2× gas but is the only safe path for legacy tokens like USDT.
   if (sym === "USDT") {
-    const tx1 = await token.transfer(to, recipientUnits, overrides);
+    const tx1 = await token.transfer(to, recipientUnits);
     await tx1.wait();
-    const tx2 = await token.transfer(FEE_COLLECTORS.ETH, feeUnits, overrides);
-    return tx1.hash; // return the user-visible tx (the recipient transfer)
+    await token.transfer(FEE_COLLECTORS.ETH, feeUnits);
+    return tx1.hash;
   }
 
   // ERC-20 + service fee → single send tx via Disperse (USDC and other
@@ -171,7 +106,7 @@ export async function sendErc20(
   // — kept hidden as a "preparing" step from the user's perspective.
   const allowance: bigint = await token.allowance(wallet.address, DISPERSE_ADDRESS);
   if (allowance < totalUnits) {
-    const approveTx = await token.approve(DISPERSE_ADDRESS, ethers.MaxUint256, overrides);
+    const approveTx = await token.approve(DISPERSE_ADDRESS, ethers.MaxUint256);
     await approveTx.wait();
   }
 
@@ -180,7 +115,6 @@ export async function sendErc20(
     tokenAddr,
     [to, FEE_COLLECTORS.ETH],
     [recipientUnits, feeUnits],
-    overrides,
   );
   return tx.hash;
 }
