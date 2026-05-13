@@ -61,6 +61,41 @@ function formatAllocation(n: number): string {
   return n.toFixed(8).replace(/\.?0+$/, "");
 }
 
+// Keep a per-address history cache in localStorage so entries don't flicker
+// out when an upstream explorer (Etherscan / mempool.space) briefly drops
+// them during indexer lag or rate-limits us. We merge the fresh fetch with
+// the cached set keyed by tx hash — taking the newest copy of each row so
+// status / timestamp updates still apply, but never erasing a row we've
+// already seen.
+const HISTORY_CACHE_PREFIX = "zenwallet.history.v1.";
+const HISTORY_CACHE_LIMIT = 200;
+
+function loadCachedHistory(accountKey: string): Tx[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(HISTORY_CACHE_PREFIX + accountKey);
+    return raw ? (JSON.parse(raw) as Tx[]) : null;
+  } catch {
+    return null;
+  }
+}
+function saveCachedHistory(accountKey: string, items: Tx[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const trimmed = items.slice(0, HISTORY_CACHE_LIMIT);
+    localStorage.setItem(HISTORY_CACHE_PREFIX + accountKey, JSON.stringify(trimmed));
+  } catch { /* quota or private mode */ }
+}
+
+/** Merge fresh + cached entries keyed by hash. Newer copy wins (so phantom
+ *  Pending → Success transitions are reflected) but no row is dropped. */
+function mergeHistory(prev: Tx[], next: Tx[]): Tx[] {
+  const byHash = new Map<string, Tx>();
+  for (const t of prev) byHash.set(t.hash, t);
+  for (const t of next) byHash.set(t.hash, t);
+  return Array.from(byHash.values()).sort((a, b) => b.timestamp - a.timestamp);
+}
+
 export default function History() {
   const [items, setItems] = useState<Tx[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -68,6 +103,18 @@ export default function History() {
   useEffect(() => {
     const p = loadPublic();
     if (!p) return;
+
+    // Cache key: ETH address is a stable per-wallet identifier and is
+    // present for every wallet we issue. Falls back to accountId for safety.
+    const cacheKey = (p.addresses.ETH || p.accountId || "anon").toLowerCase();
+
+    // Paint cached entries instantly so navigations don't flash an empty
+    // list while the explorer round-trips finish.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const cached = loadCachedHistory(cacheKey);
+    if (cached && cached.length) setItems(cached);
+    /* eslint-enable react-hooks/set-state-in-effect */
+
     (async () => {
       try {
         const out: Tx[] = [];
@@ -269,7 +316,13 @@ export default function History() {
         }
 
         out.sort((a, b) => b.timestamp - a.timestamp);
-        setItems(out);
+        // Merge with anything we'd already shown (from cache or a previous
+        // refresh) so transient explorer drops don't make rows vanish.
+        setItems((prev) => {
+          const merged = mergeHistory(prev ?? cached ?? [], out);
+          saveCachedHistory(cacheKey, merged);
+          return merged;
+        });
       } catch (e) {
         setErr(e instanceof Error ? e.message : "failed");
       }

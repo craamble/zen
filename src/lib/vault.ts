@@ -99,7 +99,12 @@ export function clearVault() {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
-      if (key && key.startsWith("zenwallet.notif.lastRead.")) localStorage.removeItem(key);
+      if (
+        key &&
+        (key.startsWith("zenwallet.notif.lastRead.") ||
+          key.startsWith("zenwallet.history.v1."))
+      )
+        localStorage.removeItem(key);
     }
   } catch { /* ignore */ }
   sessionStorage.removeItem(SESSION_KEY);
