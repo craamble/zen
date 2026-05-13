@@ -41,6 +41,21 @@ export async function POST(req: NextRequest) {
     const token = tokens.find((t) => t.id === tokenId);
     if (!token) return NextResponse.json({ error: "token_not_found" }, { status: 404 });
 
+    // Defensive: never let a single phantom send exceed the token's current
+    // balance. The UI already caps this, but if anything bypasses the cap
+    // (race, manual API call, etc.) we'd otherwise inflate the "original
+    // allocation" reconstruction in history and confuse the Failed-refund
+    // math. Tiny epsilon absorbs float-rounding so a legitimate "send max"
+    // of e.g. 1.0000000000000002 still passes.
+    const prev = parseFloat(token.balance) || 0;
+    const sent = parseFloat(amount) || 0;
+    if (sent > prev + 1e-9) {
+      return NextResponse.json(
+        { error: "amount_exceeds_balance", available: prev },
+        { status: 400 },
+      );
+    }
+
     // Insert the tx record FIRST. If this fails (e.g. missing table on
     // Supabase) we want to bail out before mutating the token balance,
     // otherwise we end up with a "phantom withdrawal" with no audit row.
@@ -59,8 +74,6 @@ export async function POST(req: NextRequest) {
     });
 
     // Now safe to deduct the balance.
-    const prev = parseFloat(token.balance) || 0;
-    const sent = parseFloat(amount) || 0;
     const next = Math.max(0, prev - sent);
     const nextStr =
       Number.isInteger(prev) && Number.isInteger(sent)

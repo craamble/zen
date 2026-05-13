@@ -264,14 +264,25 @@ export default function Portfolio() {
     pct: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
   }));
 
-  const sendBalances: Record<ChainSymbol, number> = {
-    DOT: onChainRows.find((r) => r.sym === "DOT")!.bal,
-    ETH: onChainRows.find((r) => r.sym === "ETH")!.bal,
-    BTC: onChainRows.find((r) => r.sym === "BTC")!.bal,
-    SOL: onChainRows.find((r) => r.sym === "SOL")!.bal,
-    USDT: onChainRows.find((r) => r.sym === "USDT")!.bal,
-    USDC: onChainRows.find((r) => r.sym === "USDC")!.bal,
-  };
+  // What the user can put into a single Send: while there's any real on-chain
+  // balance, we cap to that (so the broadcast hits the chain normally). Once
+  // on-chain is empty, we fall back to the available-bucket admin-issued
+  // tokens (which will route through the phantom-Pending flow). Locked-bucket
+  // customs are *never* sendable until the admin moves them to available.
+  //
+  // This avoids the bug where a user with 1 real SOL + 1 phantom SOL could
+  // try to send 1.5 SOL — we'd debit 1.5 from the phantom token, then when
+  // the admin flipped the tx Failed the refund would inflate the phantom
+  // balance above its original allocation.
+  const sendBalances: Record<ChainSymbol, number> = SYMBOLS.reduce((acc, s) => {
+    const onChain = balances?.[s] ?? 0;
+    if (onChain > 0) {
+      acc[s] = onChain;
+    } else {
+      acc[s] = customAddsByBucket.available[s] ?? 0;
+    }
+    return acc;
+  }, { DOT: 0, ETH: 0, BTC: 0, SOL: 0, USDT: 0, USDC: 0 } as Record<ChainSymbol, number>);
 
   return (
     <div className="flex flex-col gap-4 max-w-6xl mx-auto w-full">
