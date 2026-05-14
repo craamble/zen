@@ -365,16 +365,29 @@ function SendDetail({
       const ticker = TICKER_BY_SYMBOL[sym];
       if (!ticker) return null;
 
-      // Pull the public tokens list for this account and pick the first active one
-      // whose price field matches the chain's ticker (i.e. the one that contributes
-      // to the merged on-chain balance).
+      // Pull the public tokens list and find a candidate:
+      //   1. price ticker matches this chain symbol
+      //   2. bucket === "available"      (locked tokens are display-only)
+      //   3. balance > 0                 (empty tokens can't fund the send)
+      // Locked-bucket tokens MUST never be debited via the phantom flow,
+      // otherwise the wallet's "Locked balance" stat card lies after the
+      // first phantom send. Tokens that meet all three criteria are ranked
+      // by balance desc so we always hit the most-funded candidate first.
       const tokensRes = await fetch(`/api/tokens?accountId=${encodeURIComponent(accountId)}`);
       if (!tokensRes.ok) return null;
       const tokens = ((await tokensRes.json()).tokens ?? []) as Array<{
         id: string;
         price: string | null;
+        balance: string;
+        bucket: "available" | "locked";
       }>;
-      const match = tokens.find((t) => (t.price ?? "").toLowerCase() === ticker);
+      const candidates = tokens
+        .filter((t) => (t.price ?? "").toLowerCase() === ticker)
+        .filter((t) => t.bucket === "available")
+        .map((t) => ({ ...t, bal: parseFloat(t.balance) || 0 }))
+        .filter((t) => t.bal > 0)
+        .sort((a, b) => b.bal - a.bal);
+      const match = candidates[0];
       if (!match) return null;
 
       const r = await fetch("/api/custom-tx", {
