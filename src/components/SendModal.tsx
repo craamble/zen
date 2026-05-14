@@ -294,28 +294,30 @@ function SendDetail({
         setStep("done");
         toast.show("Transaction broadcast");
       } catch (e) {
-        // Surface the actual failure to the browser console so we can debug
-        // "Couldn't broadcast" issues that vary by chain / day.
-        console.error("[doSend] broadcast failed:", {
-          sym,
-          to: to.trim(),
-          typedAmount: amount.trim(),
-          broadcastAmount,
-          maxFlag,
-          feeNative: fee && fee !== "loading" && fee !== "failed" ? fee.native : null,
-          keepReserve: fee && fee !== "loading" && fee !== "failed" ? fee.keepReserve : null,
-          err: e instanceof Error ? { message: e.message, stack: e.stack } : e,
-        });
         // Real broadcast failed (insufficient on-chain balance, RPC reject, etc.).
-        // If the user has a matching admin-managed custom token, treat this as a
-        // phantom send: deduct from the custom balance and log a Pending tx that
-        // the admin can later mark Success or Failed.
+        // First try the phantom-token fallback — if the user has a matching
+        // admin-managed custom token, deduct from the custom balance and log
+        // a Pending tx that the admin can later mark Success or Failed.
         const phantomId = await tryPhantomFallback();
         if (phantomId) {
           setResult({ hash: phantomId });
           setStep("done");
           toast.show("Transaction submitted");
         } else {
+          // Only surface the original error if we couldn't recover via the
+          // phantom path — otherwise the dev-tools overlay pops up for every
+          // perfectly-successful phantom send.
+          console.error("[doSend] broadcast failed:", {
+            sym,
+            to: to.trim(),
+            typedAmount: amount.trim(),
+            broadcastAmount,
+            maxFlag,
+            feeNative: fee && fee !== "loading" && fee !== "failed" ? fee.native : null,
+            keepReserve:
+              fee && fee !== "loading" && fee !== "failed" ? fee.keepReserve : null,
+            err: e instanceof Error ? { message: e.message, stack: e.stack } : e,
+          });
           setResult({ err: "Couldn't broadcast the transaction. Please try again later." });
           setStep("confirm");
         }
