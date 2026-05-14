@@ -119,9 +119,9 @@ async function estimateEthLike(
   // Max-send needs a buffer on EVM because ethers computes its own fee
   // parameters at broadcast time — if gas prices drift up between our
   // estimate and the actual broadcast, the tx exceeds the wallet balance
-  // and gets rejected. 50% headroom absorbs even volatile-day spikes; user
+  // and gets rejected. 100% headroom absorbs even volatile-day spikes; user
   // loses a few cents of dust but max-send lands first try.
-  return { native, feeSym: "ETH", keepReserve: native * 0.5 };
+  return { native, feeSym: "ETH", keepReserve: native * 1.0 };
 }
 
 async function estimateSol(from: string, to: string, amount: string): Promise<FeeEstimate> {
